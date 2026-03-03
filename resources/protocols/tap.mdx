@@ -1,0 +1,495 @@
+---
+title: 'TAP (Trust Anchor Protocol)'
+description: 'Cryptographic identity verification for AI agents'
+icon: 'fingerprint'
+---
+
+<Info>
+  TAP provides cryptographic identity attestation for AI agents using Ed25519 and ECDSA-P256 signatures.
+</Info>
+
+## Overview
+
+The **Trust Anchor Protocol (TAP)** solves the agent identity problem: how do you verify that an AI agent is who it claims to be, and that it has permission to act on behalf of a user or organization?
+
+**Problem:** Without identity verification, malicious agents can impersonate legitimate agents, steal credentials, or make unauthorized transactions.
+
+**Solution:** TAP uses cryptographic signatures to prove agent identity and link agents to their owners through a chain of trust.
+
+---
+
+## Key Concepts
+
+### Agent Identity
+
+Each agent has a unique cryptographic identity:
+
+```python
+{
+  "agent_id": "agent_abc123",
+  "public_key": "0x...",
+  "algorithm": "ed25519",
+  "owner_id": "user_xyz",
+  "created_at": "2026-03-03T10:00:00Z",
+  "metadata": {
+    "name": "Shopping Assistant",
+    "version": "1.0.0",
+    "capabilities": ["payments", "cart_management"]
+  }
+}
+```
+
+### Trust Chain
+
+Agents are linked to their owners through a cryptographic chain:
+
+```
+USER → AGENT → WALLET → TRANSACTION
+```
+
+1. **User** creates and signs agent registration
+2. **Agent** signs all actions with its private key
+3. **Wallet** is owned by the agent
+4. **Transaction** is signed by both agent and wallet
+
+---
+
+## Supported Algorithms
+
+### Ed25519 (Recommended)
+
+<Card icon="key">
+  **Edwards-curve Digital Signature Algorithm**
+  
+  - **Fast** - 64x faster than ECDSA
+  - **Small signatures** - 64 bytes
+  - **Secure** - 128-bit security level
+  - **Deterministic** - Same message always produces same signature
+  
+  **Use for:** Most agent applications
+</Card>
+
+**Example:**
+```python
+from cryptography.hazmat.primitives.asymmetric import ed25519
+
+# Generate keypair
+private_key = ed25519.Ed25519PrivateKey.generate()
+public_key = private_key.public_key()
+
+# Sign message
+message = b"Agent action: transfer 50 USDC"
+signature = private_key.sign(message)
+
+# Verify signature
+try:
+    public_key.verify(signature, message)
+    print("Signature valid")
+except:
+    print("Signature invalid")
+```
+
+### ECDSA-P256
+
+<Card icon="key">
+  **Elliptic Curve Digital Signature Algorithm (P-256)**
+  
+  - **Compatible** - Works with existing PKI infrastructure
+  - **Widely supported** - Used in TLS, JWT, etc.
+  - **Secure** - 128-bit security level
+  - **Hardware support** - Available in TPM/HSM modules
+  
+  **Use for:** Enterprise integrations, hardware security modules
+</Card>
+
+**Example:**
+```python
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives import hashes
+
+# Generate keypair
+private_key = ec.generate_private_key(ec.SECP256R1())
+public_key = private_key.public_key()
+
+# Sign message
+message = b"Agent action: transfer 50 USDC"
+signature = private_key.sign(message, ec.ECDSA(hashes.SHA256()))
+
+# Verify signature
+try:
+    public_key.verify(signature, message, ec.ECDSA(hashes.SHA256()))
+    print("Signature valid")
+except:
+    print("Signature invalid")
+```
+
+---
+
+## Agent Registration
+
+### 1. Generate Keypair
+
+```python
+from sardis import Sardis
+
+sardis = Sardis(api_key="sk_...")
+
+# Generate Ed25519 keypair
+keypair = sardis.crypto.generate_keypair(algorithm="ed25519")
+
+print(f"Public key: {keypair.public_key}")
+print(f"Private key: {keypair.private_key}")  # Store securely!
+```
+
+### 2. Register Agent
+
+```python
+# Register agent with public key
+agent = sardis.agents.create(
+    name="Shopping Assistant",
+    description="AI agent for e-commerce purchases",
+    public_key=keypair.public_key,
+    algorithm="ed25519",
+    capabilities=["payments", "cart_management"]
+)
+
+print(f"Agent ID: {agent.agent_id}")
+print(f"Trust anchor: {agent.trust_anchor}")
+```
+
+### 3. User Approval
+
+User signs agent registration to establish ownership:
+
+```python
+# User signs agent registration
+approval = sardis.agents.approve(
+    agent_id=agent.agent_id,
+    user_id="user_123",
+    signature=user_wallet.sign(agent.registration_hash)
+)
+
+print(f"Agent approved by user: {approval.approved_at}")
+```
+
+---
+
+## Identity Verification
+
+### Signature Verification Flow
+
+<Steps>
+  <Step title="Agent Signs Action">
+    ```python
+    # Agent signs the action
+    action = {
+        "agent_id": "agent_abc123",
+        "action": "transfer",
+        "amount": "50.00",
+        "recipient": "0x...",
+        "timestamp": "2026-03-03T10:00:00Z",
+        "nonce": "unique_nonce_123"
+    }
+    
+    signature = agent_private_key.sign(json.dumps(action).encode())
+    ```
+  </Step>
+  
+  <Step title="Sardis Verifies Signature">
+    ```python
+    # Sardis retrieves agent's public key
+    agent = sardis.agents.get(action["agent_id"])
+    public_key = agent.public_key
+    
+    # Verify signature
+    try:
+        verify_signature(
+            public_key=public_key,
+            message=json.dumps(action).encode(),
+            signature=signature,
+            algorithm=agent.algorithm
+        )
+        print("Agent identity verified")
+    except InvalidSignatureError:
+        raise UnauthorizedAgentError("Invalid agent signature")
+    ```
+  </Step>
+  
+  <Step title="Check Trust Chain">
+    ```python
+    # Verify agent is owned by user
+    if agent.owner_id != expected_user_id:
+        raise UnauthorizedAgentError("Agent not owned by user")
+    
+    # Verify agent has capability
+    if "payments" not in agent.capabilities:
+        raise UnauthorizedAgentError("Agent lacks payment capability")
+    
+    # Verify agent not revoked
+    if agent.status == "revoked":
+        raise RevokedAgentError("Agent credentials revoked")
+    ```
+  </Step>
+  
+  <Step title="Execute Action">
+    ```python
+    # All verification passed - execute action
+    result = execute_transfer(
+        from_wallet=agent.wallet_id,
+        to_address=action["recipient"],
+        amount=action["amount"]
+    )
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Security Features
+
+### 1. Nonce Prevention
+
+Prevents replay attacks:
+
+```python
+# Each action includes unique nonce
+action = {
+    "agent_id": "agent_abc123",
+    "action": "transfer",
+    "nonce": str(uuid.uuid4()),  # Unique per action
+    "timestamp": now().isoformat()
+}
+
+# Sardis checks nonce hasn't been used
+if nonce_cache.exists(action["nonce"]):
+    raise ReplayAttackError("Nonce already used")
+
+nonce_cache.set(action["nonce"], True, ttl=86400)
+```
+
+### 2. Timestamp Validation
+
+Rejects old signatures:
+
+```python
+timestamp = datetime.fromisoformat(action["timestamp"])
+if now() - timestamp > timedelta(minutes=5):
+    raise ExpiredSignatureError("Signature too old")
+```
+
+### 3. Capability-Based Access
+
+Agents can only perform authorized actions:
+
+```python
+if action["action"] == "transfer":
+    if "payments" not in agent.capabilities:
+        raise UnauthorizedActionError("Agent lacks payment capability")
+
+if action["action"] == "issue_card":
+    if "card_issuance" not in agent.capabilities:
+        raise UnauthorizedActionError("Agent lacks card issuance capability")
+```
+
+### 4. Revocation
+
+Agents can be instantly revoked:
+
+```python
+# Revoke compromised agent
+sardis.agents.revoke(
+    agent_id="agent_abc123",
+    reason="Private key compromised"
+)
+
+# All future actions will be rejected
+if agent.status == "revoked":
+    raise RevokedAgentError("Agent credentials revoked")
+```
+
+---
+
+## Implementation Example
+
+### Python SDK
+
+```python
+from sardis import Sardis
+from cryptography.hazmat.primitives.asymmetric import ed25519
+import json
+
+# Initialize client
+sardis = Sardis(api_key="sk_...")
+
+# Generate agent keypair
+private_key = ed25519.Ed25519PrivateKey.generate()
+public_key = private_key.public_key()
+
+# Register agent
+agent = sardis.agents.create(
+    name="Payment Agent",
+    public_key=public_key.public_bytes_raw().hex(),
+    algorithm="ed25519",
+    capabilities=["payments"]
+)
+
+print(f"Agent registered: {agent.agent_id}")
+
+# Later: Sign an action
+action = {
+    "agent_id": agent.agent_id,
+    "action": "transfer",
+    "amount": "50.00",
+    "recipient": "0x...",
+    "timestamp": datetime.now().isoformat(),
+    "nonce": str(uuid.uuid4())
+}
+
+# Sign with agent's private key
+message = json.dumps(action, sort_keys=True).encode()
+signature = private_key.sign(message)
+
+# Execute action with signature
+result = sardis.payments.create(
+    agent_id=agent.agent_id,
+    action=action,
+    signature=signature.hex()
+)
+
+print(f"Payment executed: {result.tx_hash}")
+```
+
+### TypeScript SDK
+
+```typescript
+import { SardisClient } from '@sardis/sdk';
+import * as ed from '@noble/ed25519';
+
+const client = new SardisClient({ apiKey: 'sk_...' });
+
+// Generate keypair
+const privateKey = ed.utils.randomPrivateKey();
+const publicKey = await ed.getPublicKey(privateKey);
+
+// Register agent
+const agent = await client.agents.create({
+  name: 'Payment Agent',
+  public_key: Buffer.from(publicKey).toString('hex'),
+  algorithm: 'ed25519',
+  capabilities: ['payments'],
+});
+
+console.log(`Agent registered: ${agent.agent_id}`);
+
+// Sign action
+const action = {
+  agent_id: agent.agent_id,
+  action: 'transfer',
+  amount: '50.00',
+  recipient: '0x...',
+  timestamp: new Date().toISOString(),
+  nonce: crypto.randomUUID(),
+};
+
+const message = Buffer.from(JSON.stringify(action));
+const signature = await ed.sign(message, privateKey);
+
+// Execute with signature
+const result = await client.payments.create({
+  agent_id: agent.agent_id,
+  action,
+  signature: Buffer.from(signature).toString('hex'),
+});
+
+console.log(`Payment: ${result.tx_hash}`);
+```
+
+---
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Ed25519 for New Agents" icon="key">
+    Ed25519 is faster, smaller, and just as secure as ECDSA. Use it unless you have a specific reason to use ECDSA-P256 (e.g., hardware requirements).
+  </Accordion>
+  
+  <Accordion title="Never Expose Private Keys" icon="lock">
+    - Store private keys in environment variables or secret managers
+    - Never log private keys
+    - Never commit private keys to Git
+    - Rotate keys regularly (every 90 days)
+  </Accordion>
+  
+  <Accordion title="Use Hardware Security Modules" icon="shield">
+    For production agents handling high-value transactions:
+    - Store keys in HSM (AWS KMS, Google Cloud KMS, Turnkey)
+    - Use TPM for local key storage
+    - Require multi-signature for key operations
+  </Accordion>
+  
+  <Accordion title="Implement Key Rotation" icon="rotate">
+    ```python
+    # Generate new keypair
+    new_keypair = sardis.crypto.generate_keypair(algorithm="ed25519")
+    
+    # Update agent with new public key
+    sardis.agents.rotate_key(
+        agent_id=agent.agent_id,
+        new_public_key=new_keypair.public_key,
+        signature=old_private_key.sign(new_keypair.public_key)
+    )
+    
+    # Old key remains valid for 24 hours (grace period)
+    # Then revoke old key
+    sardis.agents.revoke_key(
+        agent_id=agent.agent_id,
+        public_key=old_keypair.public_key
+    )
+    ```
+  </Accordion>
+  
+  <Accordion title="Monitor for Suspicious Activity" icon="eye">
+    - Alert on signature verification failures
+    - Track nonce reuse attempts
+    - Monitor for expired timestamp attacks
+    - Flag rapid key rotation
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Why TAP Matters
+
+<CardGroup cols={2}>
+  <Card title="Prevents Impersonation" icon="user-shield">
+    Cryptographic proof of agent identity
+  </Card>
+  <Card title="Audit Trail" icon="list-check">
+    Every action signed and traceable
+  </Card>
+  <Card title="Instant Revocation" icon="ban">
+    Compromised agents blocked immediately
+  </Card>
+  <Card title="Zero Trust" icon="shield-halved">
+    Verify every action, trust nothing
+  </Card>
+</CardGroup>
+
+---
+
+## Learn More
+
+<CardGroup cols={2}>
+  <Card title="AP2 Protocol" icon="shield-check" href="/resources/protocols/ap2">
+    Payment mandate chain
+  </Card>
+  <Card title="A2A Protocol" icon="handshake" href="/resources/protocols/a2a">
+    Agent-to-agent payments
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference/agents">
+    Agent API documentation
+  </Card>
+  <Card title="Examples" icon="book" href="/resources/examples">
+    See TAP in action
+  </Card>
+</CardGroup>

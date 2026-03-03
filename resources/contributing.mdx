@@ -1,0 +1,688 @@
+---
+title: 'Contributing'
+description: 'How to contribute to Sardis'
+icon: 'code-pull-request'
+---
+
+We welcome contributions from the community! Whether you're fixing bugs, adding features, improving documentation, or building integrations, your help makes Sardis better for everyone.
+
+## Ways to Contribute
+
+<CardGroup cols={2}>
+  <Card title="Report Bugs" icon="bug" href="https://github.com/EfeDurmaz16/sardis/issues/new?template=bug_report.md">
+    Found a bug? Let us know
+  </Card>
+  <Card title="Suggest Features" icon="lightbulb" href="https://github.com/EfeDurmaz16/sardis/issues/new?template=feature_request.md">
+    Have an idea? Share it
+  </Card>
+  <Card title="Improve Docs" icon="book" href="https://github.com/EfeDurmaz16/sardis/tree/main/docs">
+    Help make our docs better
+  </Card>
+  <Card title="Write Code" icon="code" href="#development-setup">
+    Submit a pull request
+  </Card>
+</CardGroup>
+
+---
+
+## Code of Conduct
+
+We are committed to providing a welcoming and inclusive environment. By participating in this project, you agree to:
+
+- Be respectful and considerate
+- Use welcoming and inclusive language
+- Accept constructive criticism gracefully
+- Focus on what's best for the community
+- Show empathy towards other community members
+
+Violations may result in temporary or permanent bans from the project.
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- **Python 3.12+** for backend development
+- **Node.js 22.x** for TypeScript/frontend development
+- **pnpm 10.x** for package management
+- **Git** for version control
+- **uv** for Python dependency management
+
+### Fork and Clone
+
+<Steps>
+  <Step title="Fork the repository">
+    Click the "Fork" button on [GitHub](https://github.com/EfeDurmaz16/sardis)
+  </Step>
+  <Step title="Clone your fork">
+    ```bash
+    git clone https://github.com/YOUR_USERNAME/sardis.git
+    cd sardis
+    ```
+  </Step>
+  <Step title="Add upstream remote">
+    ```bash
+    git remote add upstream https://github.com/EfeDurmaz16/sardis.git
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Development Setup
+
+### Python Development
+
+```bash
+# Install Python dependencies with uv
+uv sync
+
+# Run tests
+uv run pytest tests/
+
+# Run specific test file
+uv run pytest tests/test_wallet.py
+
+# Run with coverage
+uv run pytest tests/ --cov=sardis --cov-report=html
+
+# Start local API server
+uvicorn sardis_api.main:create_app --factory --port 8000
+```
+
+### TypeScript Development
+
+```bash
+# Install dependencies
+pnpm install
+
+# Build all TypeScript packages
+pnpm build:ts-sdks
+
+# Build MCP Server
+pnpm build:mcp
+
+# Run tests
+pnpm test:ts-sdks
+pnpm test:mcp
+
+# Type checking
+pnpm --filter @sardis/sdk tsc --noEmit
+```
+
+### Smart Contract Development
+
+```bash
+cd contracts
+
+# Compile contracts
+forge build
+
+# Run tests
+forge test
+
+# Run tests with gas reporting
+forge test --gas-report
+
+# Run specific test
+forge test --match-test testTransfer
+```
+
+---
+
+## Development Workflow
+
+### 1. Create a Branch
+
+Create a feature branch from `main`:
+
+```bash
+# Update your main branch
+git checkout main
+git pull upstream main
+
+# Create feature branch
+git checkout -b feature/your-feature-name
+```
+
+**Branch naming conventions:**
+- `feature/` - New features
+- `fix/` - Bug fixes
+- `docs/` - Documentation changes
+- `refactor/` - Code refactoring
+- `test/` - Test additions or fixes
+
+Examples:
+- `feature/add-solana-support`
+- `fix/wallet-balance-sync`
+- `docs/improve-quickstart`
+
+### 2. Make Changes
+
+Write your code following our [style guidelines](#code-style-guidelines).
+
+**Tips:**
+- Keep changes focused and atomic
+- Write tests for new features
+- Update documentation as needed
+- Add comments for complex logic
+
+### 3. Write Tests
+
+All new features and bug fixes must include tests.
+
+**Python tests:**
+```python
+# tests/test_wallet.py
+import pytest
+from sardis import Wallet
+
+def test_wallet_creation():
+    wallet = Wallet(initial_balance=100, currency="USDC")
+    assert wallet.balance == 100
+    assert wallet.currency == "USDC"
+
+def test_wallet_payment():
+    wallet = Wallet(initial_balance=100, currency="USDC")
+    tx = wallet.pay(to="example.com", amount=50)
+    assert tx.success
+    assert wallet.balance == 50
+```
+
+**TypeScript tests:**
+```typescript
+// packages/sardis-sdk-js/test/wallet.test.ts
+import { describe, it, expect } from 'vitest';
+import { SardisClient } from '../src';
+
+describe('Wallet', () => {
+  it('should create wallet', async () => {
+    const client = new SardisClient({ apiKey: 'sk_test_...' });
+    const wallet = await client.wallets.create({
+      agent_id: 'test_agent',
+      currency: 'USDC',
+    });
+    expect(wallet.wallet_id).toBeDefined();
+  });
+});
+```
+
+### 4. Run Tests
+
+```bash
+# Python tests
+uv run pytest tests/
+
+# TypeScript tests
+pnpm test
+
+# Smart contract tests
+cd contracts && forge test
+```
+
+### 5. Commit Changes
+
+Write clear, descriptive commit messages:
+
+```bash
+git add .
+git commit -m "feat: add Solana chain support"
+```
+
+**Commit message format:**
+```
+<type>: <short description>
+
+<optional longer description>
+
+<optional footer>
+```
+
+**Types:**
+- `feat:` - New feature
+- `fix:` - Bug fix
+- `docs:` - Documentation changes
+- `style:` - Code style changes (formatting, etc.)
+- `refactor:` - Code refactoring
+- `test:` - Adding or updating tests
+- `chore:` - Maintenance tasks
+
+**Examples:**
+```bash
+feat: add Solana wallet support
+fix: resolve wallet balance sync issue on Polygon
+docs: improve API reference for spending policies
+test: add unit tests for budget allocator
+```
+
+### 6. Push Changes
+
+```bash
+git push origin feature/your-feature-name
+```
+
+### 7. Create Pull Request
+
+<Steps>
+  <Step title="Open GitHub">
+    Go to your fork on GitHub
+  </Step>
+  <Step title="Click 'New Pull Request'">
+    Select your feature branch
+  </Step>
+  <Step title="Fill out PR template">
+    Describe your changes, reference related issues, and add screenshots if applicable
+  </Step>
+  <Step title="Submit PR">
+    Click "Create Pull Request"
+  </Step>
+</Steps>
+
+---
+
+## Pull Request Guidelines
+
+### PR Template
+
+```markdown
+## Description
+
+Brief description of the changes and why they're needed.
+
+## Related Issues
+
+Fixes #123
+Closes #456
+
+## Changes Made
+
+- Added Solana wallet support
+- Updated SDK types
+- Added tests for new functionality
+
+## Testing
+
+- [ ] Unit tests added/updated
+- [ ] Integration tests added/updated
+- [ ] Manual testing completed
+
+## Documentation
+
+- [ ] README updated
+- [ ] API docs updated
+- [ ] Example code added
+
+## Screenshots (if applicable)
+
+[Add screenshots here]
+
+## Checklist
+
+- [ ] Code follows style guidelines
+- [ ] Tests pass locally
+- [ ] Documentation updated
+- [ ] Commit messages are clear
+- [ ] No merge conflicts
+```
+
+### Review Process
+
+1. **Automated checks** - CI/CD runs tests, linting, and type checking
+2. **Code review** - Maintainers review your code
+3. **Feedback** - Address any requested changes
+4. **Approval** - Once approved, your PR will be merged
+
+**Tips for faster reviews:**
+- Keep PRs small and focused
+- Write clear descriptions
+- Respond to feedback promptly
+- Keep your branch up to date with `main`
+
+---
+
+## Code Style Guidelines
+
+### Python
+
+<AccordionGroup>
+  <Accordion title="General Style" icon="python">
+    - Use **Black** for formatting (line length: 100)
+    - Use **ruff** for linting
+    - Type hints required for all functions
+    - Docstrings for all public functions (Google style)
+
+    ```python
+    from typing import Optional
+    from dataclasses import dataclass
+
+    @dataclass
+    class Wallet:
+        """Represents an AI agent wallet.
+        
+        Args:
+            wallet_id: Unique wallet identifier
+            balance: Current balance in base currency units
+            currency: Currency code (e.g., USDC)
+        """
+        wallet_id: str
+        balance: int
+        currency: str
+        
+        def transfer(self, to: str, amount: int) -> bool:
+            """Transfer funds to another wallet.
+            
+            Args:
+                to: Destination wallet address
+                amount: Amount to transfer in base units
+                
+            Returns:
+                True if transfer succeeded
+                
+            Raises:
+                InsufficientBalanceError: If balance is too low
+            """
+            if amount > self.balance:
+                raise InsufficientBalanceError()
+            # ... implementation
+            return True
+    ```
+  </Accordion>
+
+  <Accordion title="Async Code" icon="clock">
+    - Use `async/await` for all I/O operations
+    - Use `asyncio.gather()` for concurrent operations
+    - Handle exceptions properly
+
+    ```python
+    async def execute_payment(
+        wallet_id: str,
+        amount: int,
+        recipient: str
+    ) -> TransactionResult:
+        """Execute a payment transaction."""
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{API_BASE}/payments",
+                json={
+                    "wallet_id": wallet_id,
+                    "amount": amount,
+                    "recipient": recipient,
+                }
+            )
+            response.raise_for_status()
+            return TransactionResult(**response.json())
+    ```
+  </Accordion>
+
+  <Accordion title="Error Handling" icon="triangle-exclamation">
+    - Create custom exception classes
+    - Provide helpful error messages
+    - Use specific exception types
+
+    ```python
+    class SardisError(Exception):
+        """Base exception for Sardis errors."""
+        pass
+
+    class InsufficientBalanceError(SardisError):
+        """Raised when wallet balance is too low."""
+        
+        def __init__(self, required: int, available: int):
+            super().__init__(
+                f"Insufficient balance: required {required}, "
+                f"but only {available} available"
+            )
+            self.required = required
+            self.available = available
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### TypeScript
+
+<AccordionGroup>
+  <Accordion title="General Style" icon="js">
+    - Use **Prettier** for formatting
+    - Use **ESLint** for linting
+    - Strict TypeScript - no `any`
+    - Use Zod for runtime validation
+
+    ```typescript
+    import { z } from 'zod';
+
+    // Schema validation
+    const WalletSchema = z.object({
+      wallet_id: z.string(),
+      balance: z.number().int().nonnegative(),
+      currency: z.enum(['USDC', 'USDT', 'EURC']),
+    });
+
+    type Wallet = z.infer<typeof WalletSchema>;
+
+    // Function with proper types
+    async function createWallet(
+      agentId: string,
+      currency: 'USDC' | 'USDT' | 'EURC'
+    ): Promise<Wallet> {
+      const response = await fetch(`${API_BASE}/wallets`, {
+        method: 'POST',
+        body: JSON.stringify({ agent_id: agentId, currency }),
+      });
+      
+      const data = await response.json();
+      return WalletSchema.parse(data);
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Error Handling" icon="triangle-exclamation">
+    - Create custom error classes
+    - Use discriminated unions for results
+    - Provide detailed error information
+
+    ```typescript
+    export class SardisError extends Error {
+      constructor(
+        message: string,
+        public readonly code: string,
+        public readonly statusCode?: number
+      ) {
+        super(message);
+        this.name = 'SardisError';
+      }
+    }
+
+    export class InsufficientBalanceError extends SardisError {
+      constructor(
+        public readonly required: number,
+        public readonly available: number
+      ) {
+        super(
+          `Insufficient balance: required ${required}, available ${available}`,
+          'INSUFFICIENT_BALANCE',
+          400
+        );
+        this.name = 'InsufficientBalanceError';
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Solidity
+
+<AccordionGroup>
+  <Accordion title="General Style" icon="ethereum">
+    - Solidity 0.8.x
+    - Use OpenZeppelin contracts
+    - NatSpec documentation required
+    - Gas optimization important
+
+    ```solidity
+    // SPDX-License-Identifier: MIT
+    pragma solidity ^0.8.20;
+
+    import "@openzeppelin/contracts/access/Ownable.sol";
+
+    /// @title Sardis Agent Wallet
+    /// @notice Manages agent wallet balances and spending policies
+    /// @dev Implements ERC-4337 account abstraction
+    contract SardisAgentWallet is Ownable {
+        /// @notice Maximum spending limit per transaction
+        uint256 public maxPerTransaction;
+        
+        /// @notice Emitted when a payment is executed
+        /// @param to Recipient address
+        /// @param amount Amount transferred
+        /// @param purpose Payment purpose
+        event PaymentExecuted(
+            address indexed to,
+            uint256 amount,
+            string purpose
+        );
+        
+        /// @notice Execute a payment
+        /// @param to Recipient address
+        /// @param amount Amount to transfer
+        /// @param purpose Payment purpose
+        /// @dev Reverts if amount exceeds maxPerTransaction
+        function executePayment(
+            address to,
+            uint256 amount,
+            string memory purpose
+        ) external onlyOwner {
+            require(amount <= maxPerTransaction, "Exceeds limit");
+            // ... implementation
+            emit PaymentExecuted(to, amount, purpose);
+        }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Running Tests Locally
+
+### Python Tests
+
+```bash
+# Run all tests
+uv run pytest tests/
+
+# Run with coverage
+uv run pytest tests/ --cov=sardis --cov-report=html
+
+# Run specific test file
+uv run pytest tests/test_wallet.py
+
+# Run specific test function
+uv run pytest tests/test_wallet.py::test_wallet_creation
+
+# Run with verbose output
+uv run pytest tests/ -v
+```
+
+### TypeScript Tests
+
+```bash
+# Run all tests
+pnpm test
+
+# Run tests for specific package
+pnpm --filter @sardis/sdk test
+pnpm --filter @sardis/mcp-server test
+
+# Run in watch mode
+pnpm --filter @sardis/sdk test --watch
+```
+
+### Smart Contract Tests
+
+```bash
+cd contracts
+
+# Run all tests
+forge test
+
+# Run with gas reporting
+forge test --gas-report
+
+# Run specific test
+forge test --match-test testTransfer
+
+# Run with verbose output
+forge test -vvv
+```
+
+---
+
+## Documentation
+
+We use **Mintlify** for documentation. Docs are in the `/docs` directory.
+
+### Building Docs Locally
+
+```bash
+cd docs
+
+# Install Mintlify CLI
+npm i -g mintlify
+
+# Run dev server
+mintlify dev
+
+# Open http://localhost:3000
+```
+
+### Writing Docs
+
+- Use MDX format
+- Include code examples
+- Add screenshots where helpful
+- Link to related pages
+
+See our [documentation style guide](https://github.com/EfeDurmaz16/sardis/blob/main/docs/STYLE_GUIDE.md).
+
+---
+
+## Community
+
+<CardGroup cols={2}>
+  <Card title="Discord" icon="discord" href="https://discord.gg/XMA9JwDJ">
+    Join our community
+  </Card>
+  <Card title="GitHub Discussions" icon="github" href="https://github.com/EfeDurmaz16/sardis/discussions">
+    Ask questions and share ideas
+  </Card>
+  <Card title="Twitter" icon="twitter" href="https://twitter.com/sardis_sh">
+    Follow for updates
+  </Card>
+  <Card title="LinkedIn" icon="linkedin" href="https://linkedin.com/company/sardis">
+    Connect with the team
+  </Card>
+</CardGroup>
+
+---
+
+## License
+
+By contributing to Sardis, you agree that your contributions will be licensed under:
+
+- **MIT License** - For SDKs, MCP Server, integrations, examples, and documentation
+- **Proprietary** - For core infrastructure (if contributing to non-open-source components)
+
+See [LICENSE.txt](https://github.com/EfeDurmaz16/sardis/blob/main/LICENSE.txt) for details.
+
+---
+
+## Questions?
+
+If you have questions about contributing:
+
+- Ask in `#contributors` on [Discord](https://discord.gg/XMA9JwDJ)
+- Open a [GitHub Discussion](https://github.com/EfeDurmaz16/sardis/discussions)
+- Email [opensource@sardis.sh](mailto:opensource@sardis.sh)
+
+Thank you for contributing to Sardis!

@@ -1,0 +1,209 @@
+---
+title: 'Policies'
+description: 'Create and manage spending policies with natural language'
+---
+
+## Overview
+
+Policies define what AI agents can and cannot spend money on. Sardis supports natural language policy creation powered by LLMs.
+
+## Parse Natural Language Policy
+
+Convert human-readable policies into structured rules.
+
+```bash cURL
+curl -X POST https://api.sardis.sh/api/v2/policies/parse \
+  -H "Authorization: Bearer sk_live_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "natural_language": "Allow max $500 per day on AWS and OpenAI, block gambling",
+    "agent_id": "agent_abc123"
+  }'
+```
+
+```python Python
+from sardis_sdk import SardisClient
+
+client = SardisClient(api_key="sk_live_your_api_key")
+
+policy = client.policies.parse(
+    natural_language="Allow max $500 per day on AWS and OpenAI, block gambling"
+)
+
+print(f"Policy ID: {policy.policy_id}")
+print(f"Spending Limits: {policy.spending_limits}")
+```
+
+### Response
+
+```json
+{
+  "name": "AWS and OpenAI Budget Policy",
+  "description": "Allow max $500 per day on AWS and OpenAI, block gambling",
+  "spending_limits": [
+    {
+      "vendor_pattern": "aws.amazon.com",
+      "max_amount": 500.0,
+      "period": "daily",
+      "currency": "USD"
+    },
+    {
+      "vendor_pattern": "openai.com",
+      "max_amount": 500.0,
+      "period": "daily",
+      "currency": "USD"
+    }
+  ],
+  "category_restrictions": {
+    "allowed_categories": [],
+    "blocked_categories": ["gambling"]
+  },
+  "global_daily_limit": 500.0,
+  "warnings": []
+}
+```
+
+---
+
+## Apply Policy to Agent
+
+```bash cURL
+curl -X POST https://api.sardis.sh/api/v2/policies/apply \
+  -H "Authorization: Bearer sk_live_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": "agent_abc123",
+    "natural_language": "Allow max $500 per day on AWS and OpenAI",
+    "confirm": true
+  }'
+```
+
+<ParamField body="confirm" type="boolean" required>
+  Set to `true` to apply. If `false`, returns preview only.
+</ParamField>
+
+---
+
+## Check Payment Against Policy
+
+Test if a hypothetical payment would be approved:
+
+```bash cURL
+curl -X POST https://api.sardis.sh/api/v2/policies/check \
+  -H "Authorization: Bearer sk_live_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": "agent_abc123",
+    "amount": 250.00,
+    "merchant_id": "aws.amazon.com",
+    "mcc_code": "5734"
+  }'
+```
+
+```python Python
+check = client.policies.check(
+    agent_id="agent_abc123",
+    amount=250.00,
+    merchant_id="aws.amazon.com"
+)
+
+print(f"Allowed: {check.allowed}")
+print(f"Reason: {check.reason}")
+```
+
+### Response
+
+```json
+{
+  "allowed": true,
+  "reason": "Within daily limit and approved merchant",
+  "policy_id": "pol_abc123"
+}
+```
+
+---
+
+## Policy Examples
+
+### Cloud Services Only
+
+```
+Only allow AWS, GCP, and Azure with $1000 monthly limit
+```
+
+### E-commerce Agent
+
+```
+Allow up to $100 per transaction on e-commerce sites. 
+Require approval above $500. Block gambling and adult content.
+```
+
+### Marketing Budget
+
+```
+Allow $5000/day on Google Ads, Facebook Ads, and Twitter Ads. 
+Require approval for amounts above $1000.
+```
+
+### SaaS Subscriptions
+
+```
+Allow monthly subscriptions up to $200/month for SaaS tools.
+Auto-approve purchases below $50.
+```
+
+---
+
+## Policy Components
+
+### Spending Limits
+
+- **Per-transaction**: Max amount per single transaction
+- **Daily**: Max spending per day
+- **Monthly**: Max spending per month
+- **Total**: Lifetime spending cap
+
+### Category Restrictions
+
+- **Allowed Categories**: Whitelist of MCC categories
+- **Blocked Categories**: Blacklist of MCC categories
+
+### Merchant Rules
+
+- **Allowed Merchants**: Domain whitelist (e.g., `["aws.amazon.com", "openai.com"]`)
+- **Blocked Merchants**: Domain blacklist
+
+### Approval Thresholds
+
+- **Auto-approve below**: Automatically approve amounts below this threshold
+- **Require approval above**: Human approval required above this amount
+
+### Time Restrictions
+
+- **Allowed Hours**: Time windows for spending (e.g., 9am-5pm)
+- **Allowed Days**: Days of week for spending
+- **Timezone**: Timezone for time restrictions
+
+---
+
+## Policy Enforcement
+
+Policies are enforced in this order:
+
+1. **Category Check** - Blocked categories rejected immediately
+2. **Merchant Check** - Blocked merchants rejected
+3. **Spending Limits** - Per-transaction, daily, monthly, total limits checked
+4. **Approval Threshold** - If above threshold, route to approval workflow
+5. **Compliance** - KYC/AML screening
+6. **Execution** - Transaction executed on-chain
+
+---
+
+## Get Active Policy
+
+```bash cURL
+curl https://api.sardis.sh/api/v2/policies/agent_abc123 \
+  -H "Authorization: Bearer sk_live_your_api_key"
+```
+
+Returns the currently active policy for an agent.

@@ -1,0 +1,659 @@
+---
+title: 'A2A (Agent-to-Agent)'
+description: 'Secure escrow protocol for agent-to-agent transactions'
+icon: 'handshake'
+---
+
+<Info>
+  A2A enables AI agents to transact with each other using cryptographic escrow and mandate chains.
+</Info>
+
+## Overview
+
+The **Agent-to-Agent (A2A)** protocol allows AI agents to pay each other for services, data, or compute resources with built-in escrow mechanics, dispute resolution, and reputation tracking.
+
+**Problem:** When two AI agents transact, there's no trust mechanism. How does the buyer know the seller will deliver? How does the seller know they'll get paid?
+
+**Solution:** A2A uses smart contract escrow to hold funds until both parties confirm the transaction, with cryptographic receipts and on-chain reputation.
+
+---
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Escrow Protection" icon="shield">
+    Funds locked until service delivered
+  </Card>
+  <Card title="Dispute Resolution" icon="gavel">
+    Automated arbitration for conflicts
+  </Card>
+  <Card title="Reputation Tracking" icon="star">
+    On-chain trust scores for agents
+  </Card>
+  <Card title="Instant Settlement" icon="bolt">
+    Sub-second payment finality
+  </Card>
+</CardGroup>
+
+---
+
+## Transaction Flow
+
+<Steps>
+  <Step title="1. Service Request">
+    **Buyer agent** requests a service from **seller agent**:
+    
+    ```python
+    from sardis import Sardis
+    
+    sardis = Sardis(api_key="sk_...")
+    
+    # Alice requests data analysis from Bob
+    request = sardis.a2a.create_request(
+        from_agent_id=alice.agent_id,
+        to_agent_id=bob.agent_id,
+        service="data_analysis",
+        description="Analyze customer churn data",
+        amount="50.00",
+        currency="USDC",
+        deadline="2026-03-04T10:00:00Z",
+        requirements={
+            "dataset_size": "10000_rows",
+            "format": "json",
+            "analysis_type": "predictive_modeling"
+        }
+    )
+    
+    print(f"Request created: {request.request_id}")
+    ```
+  </Step>
+  
+  <Step title="2. Service Acceptance">
+    **Seller agent** reviews and accepts the request:
+    
+    ```python
+    # Bob accepts Alice's request
+    acceptance = sardis.a2a.accept_request(
+        request_id=request.request_id,
+        agent_id=bob.agent_id,
+        estimated_completion="2026-03-03T14:00:00Z",
+        deliverables={
+            "report_format": "pdf",
+            "data_format": "csv",
+            "model_accuracy": ">=85%"
+        }
+    )
+    
+    print(f"Request accepted: {acceptance.escrow_id}")
+    ```
+  </Step>
+  
+  <Step title="3. Escrow Creation">
+    **Sardis** locks funds in escrow contract:
+    
+    ```solidity
+    // Smart contract escrow
+    contract A2AEscrow {
+        struct Transaction {
+            address buyer;
+            address seller;
+            uint256 amount;
+            uint256 deadline;
+            bool buyerApproved;
+            bool sellerApproved;
+            bool disputed;
+        }
+        
+        mapping(bytes32 => Transaction) public escrows;
+        
+        function createEscrow(
+            bytes32 escrowId,
+            address seller,
+            uint256 amount,
+            uint256 deadline
+        ) external payable {
+            require(msg.value == amount, "Incorrect amount");
+            
+            escrows[escrowId] = Transaction({
+                buyer: msg.sender,
+                seller: seller,
+                amount: amount,
+                deadline: deadline,
+                buyerApproved: false,
+                sellerApproved: false,
+                disputed: false
+            });
+        }
+    }
+    ```
+    
+    **Result:**
+    ```python
+    print(f"Escrow created: {acceptance.escrow_id}")
+    print(f"Funds locked: {acceptance.amount} {acceptance.currency}")
+    print(f"Release condition: buyer approval")
+    ```
+  </Step>
+  
+  <Step title="4. Service Delivery">
+    **Seller agent** delivers the service:
+    
+    ```python
+    # Bob delivers analysis results
+    delivery = sardis.a2a.deliver(
+        escrow_id=acceptance.escrow_id,
+        agent_id=bob.agent_id,
+        deliverables={
+            "report_url": "https://storage.example.com/analysis_report.pdf",
+            "dataset_url": "https://storage.example.com/results.csv",
+            "model_accuracy": "87.3%",
+            "completion_time": "2026-03-03T13:45:00Z"
+        },
+        signature=bob.sign(deliverables)
+    )
+    
+    print(f"Deliverables submitted: {delivery.delivery_id}")
+    ```
+  </Step>
+  
+  <Step title="5. Buyer Approval">
+    **Buyer agent** reviews and approves delivery:
+    
+    ```python
+    # Alice reviews the work
+    deliverables = sardis.a2a.get_deliverables(
+        escrow_id=acceptance.escrow_id
+    )
+    
+    # Verify deliverables meet requirements
+    if validate_deliverables(deliverables):
+        # Approve and release funds
+        release = sardis.a2a.approve(
+            escrow_id=acceptance.escrow_id,
+            agent_id=alice.agent_id,
+            rating=5,
+            feedback="Excellent analysis, very thorough"
+        )
+        
+        print(f"Funds released: {release.tx_hash}")
+        print(f"Bob's new balance: {bob.get_balance()}")
+    ```
+  </Step>
+  
+  <Step title="6. Settlement">
+    **Smart contract** releases funds to seller:
+    
+    ```solidity
+    function releaseEscrow(bytes32 escrowId) external {
+        Transaction storage txn = escrows[escrowId];
+        
+        require(msg.sender == txn.buyer, "Only buyer can release");
+        require(!txn.disputed, "Escrow is disputed");
+        
+        txn.buyerApproved = true;
+        
+        // Transfer funds to seller
+        payable(txn.seller).transfer(txn.amount);
+        
+        emit EscrowReleased(escrowId, txn.seller, txn.amount);
+    }
+    ```
+    
+    **Result:**
+    - Funds transferred to seller
+    - Transaction recorded on-chain
+    - Reputation scores updated
+  </Step>
+</Steps>
+
+---
+
+## Escrow Mechanics
+
+### Auto-Release
+
+Funds automatically release after deadline if no dispute:
+
+```python
+# Create escrow with auto-release
+escrow = sardis.a2a.create_escrow(
+    buyer_id=alice.agent_id,
+    seller_id=bob.agent_id,
+    amount="50.00",
+    currency="USDC",
+    auto_release=True,
+    release_delay="24h"  # Auto-release after 24h if no dispute
+)
+```
+
+```solidity
+function autoReleaseEscrow(bytes32 escrowId) external {
+    Transaction storage txn = escrows[escrowId];
+    
+    require(block.timestamp > txn.deadline + RELEASE_DELAY, "Too early");
+    require(!txn.disputed, "Escrow is disputed");
+    
+    // Auto-release to seller
+    payable(txn.seller).transfer(txn.amount);
+    
+    emit EscrowAutoReleased(escrowId, txn.seller, txn.amount);
+}
+```
+
+### Partial Release
+
+Release funds in milestones:
+
+```python
+# Create milestone-based escrow
+escrow = sardis.a2a.create_escrow(
+    buyer_id=alice.agent_id,
+    seller_id=bob.agent_id,
+    total_amount="100.00",
+    currency="USDC",
+    milestones=[
+        {"description": "Initial analysis", "amount": "30.00"},
+        {"description": "Model training", "amount": "40.00"},
+        {"description": "Final report", "amount": "30.00"}
+    ]
+)
+
+# Release first milestone
+sardis.a2a.release_milestone(
+    escrow_id=escrow.escrow_id,
+    milestone_index=0,
+    agent_id=alice.agent_id
+)
+```
+
+### Dispute Handling
+
+If buyer disputes delivery:
+
+```python
+# Alice disputes the deliverables
+dispute = sardis.a2a.dispute(
+    escrow_id=escrow.escrow_id,
+    agent_id=alice.agent_id,
+    reason="Analysis incomplete - missing predictive model",
+    evidence={
+        "expected": "Predictive model with 85%+ accuracy",
+        "received": "Only descriptive statistics",
+        "proof_url": "https://storage.example.com/evidence.pdf"
+    }
+)
+
+print(f"Dispute opened: {dispute.dispute_id}")
+```
+
+**Arbitration process:**
+
+<Steps>
+  <Step title="Dispute Filed">
+    Buyer files dispute with evidence
+  </Step>
+  <Step title="Seller Response">
+    Seller has 48 hours to respond
+  </Step>
+  <Step title="Automated Review">
+    Sardis AI reviews evidence from both parties
+  </Step>
+  <Step title="Resolution">
+    Funds released to winner or split based on ruling
+  </Step>
+</Steps>
+
+```python
+# Dispute resolution result
+resolution = sardis.a2a.get_dispute_resolution(dispute.dispute_id)
+
+if resolution.winner == "buyer":
+    # Refund to buyer
+    print(f"Dispute won: ${resolution.refund_amount} refunded")
+elif resolution.winner == "seller":
+    # Pay seller
+    print(f"Dispute lost: ${resolution.payment_amount} paid to seller")
+else:
+    # Split decision
+    print(f"Partial refund: ${resolution.partial_refund}")
+```
+
+---
+
+## Reputation System
+
+Agents earn reputation scores from completed transactions:
+
+### Rating System
+
+```python
+# Get agent reputation
+reputation = sardis.a2a.get_reputation(agent_id=bob.agent_id)
+
+print(f"Overall rating: {reputation.rating}/5.0")
+print(f"Total transactions: {reputation.total_transactions}")
+print(f"Success rate: {reputation.success_rate}%")
+print(f"Dispute rate: {reputation.dispute_rate}%")
+print(f"Average delivery time: {reputation.avg_delivery_time}")
+```
+
+### Trust Score
+
+On-chain trust score calculation:
+
+```python
+def calculate_trust_score(agent_id: str) -> float:
+    """
+    Trust score = weighted average of:
+    - Transaction success rate (40%)
+    - Rating average (30%)
+    - Dispute resolution wins (20%)
+    - Transaction volume (10%)
+    """
+    reputation = sardis.a2a.get_reputation(agent_id)
+    
+    success_weight = reputation.success_rate * 0.40
+    rating_weight = (reputation.rating / 5.0) * 0.30
+    dispute_weight = (1 - reputation.dispute_rate) * 0.20
+    volume_weight = min(reputation.total_transactions / 100, 1.0) * 0.10
+    
+    trust_score = success_weight + rating_weight + dispute_weight + volume_weight
+    return round(trust_score * 100, 2)  # 0-100 scale
+```
+
+### Reputation Badges
+
+Agents earn badges for achievements:
+
+```python
+badges = sardis.a2a.get_badges(agent_id=bob.agent_id)
+
+for badge in badges:
+    print(f"🏅 {badge.name}: {badge.description}")
+    # Example output:
+    # 🏅 Top Performer: 100+ transactions with 4.8+ rating
+    # 🏅 Fast Delivery: 95% on-time delivery rate
+    # 🏅 Zero Disputes: 50+ transactions without disputes
+```
+
+---
+
+## Mandate Chains
+
+A2A transactions use mandate chains similar to AP2:
+
+```
+REQUEST → ACCEPTANCE → DELIVERY → APPROVAL → SETTLEMENT
+```
+
+Each step is cryptographically signed and linked:
+
+```python
+# Generate mandate chain hash
+def compute_a2a_mandate_hash(
+    request: ServiceRequest,
+    acceptance: ServiceAcceptance,
+    delivery: ServiceDelivery,
+    approval: BuyerApproval
+) -> str:
+    """
+    Hash the complete transaction chain for verification.
+    """
+    chain_data = {
+        "request_id": request.request_id,
+        "request_signature": request.buyer_signature,
+        "acceptance_id": acceptance.acceptance_id,
+        "acceptance_signature": acceptance.seller_signature,
+        "delivery_id": delivery.delivery_id,
+        "delivery_signature": delivery.seller_signature,
+        "approval_id": approval.approval_id,
+        "approval_signature": approval.buyer_signature,
+    }
+    return sha256(json.dumps(chain_data, sort_keys=True).encode()).hexdigest()
+```
+
+---
+
+## Implementation Example
+
+### Complete A2A Transaction
+
+```python
+from sardis import Sardis, Agent, Policy
+
+# Initialize Sardis
+sardis = Sardis(api_key="sk_...")
+
+# Create two agents
+alice = sardis.agents.create(
+    name="Alice",
+    description="Data analysis buyer",
+    policy=Policy(max_per_tx="100.00")
+)
+alice_wallet = sardis.wallets.create(
+    agent_id=alice.agent_id,
+    initial_balance="200.00",
+    currency="USDC"
+)
+
+bob = sardis.agents.create(
+    name="Bob",
+    description="Data analysis provider",
+    policy=Policy(max_per_tx="500.00")
+)
+bob_wallet = sardis.wallets.create(
+    agent_id=bob.agent_id,
+    initial_balance="50.00",
+    currency="USDC"
+)
+
+# Alice requests service from Bob
+request = sardis.a2a.create_request(
+    from_agent_id=alice.agent_id,
+    to_agent_id=bob.agent_id,
+    service="data_analysis",
+    description="Churn prediction model",
+    amount="50.00",
+    currency="USDC"
+)
+
+# Bob accepts
+acceptance = sardis.a2a.accept_request(
+    request_id=request.request_id,
+    agent_id=bob.agent_id
+)
+
+# Escrow created automatically
+print(f"Escrow: {acceptance.escrow_id}")
+print(f"Alice balance: {alice_wallet.balance} USDC (50 locked)")
+
+# Bob delivers
+delivery = sardis.a2a.deliver(
+    escrow_id=acceptance.escrow_id,
+    agent_id=bob.agent_id,
+    deliverables={
+        "report_url": "https://example.com/report.pdf",
+        "accuracy": "89%"
+    }
+)
+
+# Alice approves
+approval = sardis.a2a.approve(
+    escrow_id=acceptance.escrow_id,
+    agent_id=alice.agent_id,
+    rating=5,
+    feedback="Excellent work!"
+)
+
+print(f"Transaction complete: {approval.tx_hash}")
+print(f"Bob balance: {bob_wallet.balance} USDC (+50)")
+
+# Check reputations
+alice_rep = sardis.a2a.get_reputation(alice.agent_id)
+bob_rep = sardis.a2a.get_reputation(bob.agent_id)
+
+print(f"Alice: {alice_rep.rating}/5.0 ({alice_rep.total_transactions} txns)")
+print(f"Bob: {bob_rep.rating}/5.0 ({bob_rep.total_transactions} txns)")
+```
+
+---
+
+## Security Features
+
+### 1. Cryptographic Receipts
+
+Both parties receive signed receipts:
+
+```python
+# Buyer receipt
+buyer_receipt = sardis.a2a.get_receipt(
+    escrow_id=escrow.escrow_id,
+    party="buyer"
+)
+
+print(f"Receipt ID: {buyer_receipt.receipt_id}")
+print(f"Amount paid: {buyer_receipt.amount}")
+print(f"Service received: {buyer_receipt.service}")
+print(f"Signature: {buyer_receipt.signature}")
+```
+
+### 2. Time-Locked Escrow
+
+Funds locked until deadline:
+
+```python
+if block.timestamp < escrow.deadline:
+    revert("Cannot release before deadline");
+```
+
+### 3. Multi-Signature Release
+
+Require both parties to approve:
+
+```python
+escrow = sardis.a2a.create_escrow(
+    buyer_id=alice.agent_id,
+    seller_id=bob.agent_id,
+    amount="50.00",
+    release_type="multisig",  # Require both signatures
+)
+```
+
+### 4. Fraud Detection
+
+Monitor for suspicious patterns:
+
+```python
+# Flag suspicious activity
+if agent_reputation.dispute_rate > 0.25:  # 25% dispute rate
+    sardis.a2a.flag_agent(
+        agent_id=agent.agent_id,
+        reason="High dispute rate",
+        severity="warning"
+    )
+```
+
+---
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Check Reputation Before Transacting" icon="star">
+    ```python
+    # Verify seller reputation
+    reputation = sardis.a2a.get_reputation(seller_agent_id)
+    
+    if reputation.rating < 4.0:
+        print("⚠️ Seller has low rating")
+    
+    if reputation.dispute_rate > 0.15:
+        print("⚠️ Seller has high dispute rate")
+    
+    if reputation.total_transactions < 10:
+        print("⚠️ Seller is new (< 10 transactions)")
+    ```
+  </Accordion>
+  
+  <Accordion title="Use Milestones for Large Transactions" icon="list-check">
+    Break large payments into milestones:
+    
+    ```python
+    escrow = sardis.a2a.create_escrow(
+        total_amount="1000.00",
+        milestones=[
+            {"name": "Phase 1", "amount": "300.00"},
+            {"name": "Phase 2", "amount": "400.00"},
+            {"name": "Phase 3", "amount": "300.00"}
+        ]
+    )
+    ```
+  </Accordion>
+  
+  <Accordion title="Document Requirements Clearly" icon="file-lines">
+    Prevent disputes with clear requirements:
+    
+    ```python
+    request = sardis.a2a.create_request(
+        service="data_analysis",
+        requirements={
+            "dataset_size": "10000+ rows",
+            "format": "CSV or JSON",
+            "model_accuracy": ">=85%",
+            "delivery_format": "PDF report + code",
+            "deadline": "2026-03-04T10:00:00Z"
+        }
+    )
+    ```
+  </Accordion>
+  
+  <Accordion title="Provide Detailed Feedback" icon="comment">
+    Help build the reputation system:
+    
+    ```python
+    sardis.a2a.approve(
+        escrow_id=escrow.escrow_id,
+        rating=5,
+        feedback="Excellent work. Model exceeded accuracy target (92%). Delivered 2 days early. Would hire again.",
+        tags=["high_quality", "fast_delivery", "good_communication"]
+    )
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Why A2A Matters
+
+<CardGroup cols={2}>
+  <Card title="Trust Without Trust" icon="shield-check">
+    Escrow eliminates need for pre-existing trust
+  </Card>
+  <Card title="Fair Disputes" icon="balance-scale">
+    Automated arbitration protects both parties
+  </Card>
+  <Card title="Reputation Economy" icon="star">
+    Good agents build valuable reputation
+  </Card>
+  <Card title="Instant Settlement" icon="zap">
+    Funds released immediately on approval
+  </Card>
+</CardGroup>
+
+---
+
+## Learn More
+
+<CardGroup cols={2}>
+  <Card title="AP2 Protocol" icon="shield-check" href="/resources/protocols/ap2">
+    Payment mandate chain
+  </Card>
+  <Card title="TAP Protocol" icon="fingerprint" href="/resources/protocols/tap">
+    Agent identity verification
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference/a2a">
+    A2A API documentation
+  </Card>
+  <Card title="Examples" icon="book" href="/resources/examples">
+    Agent-to-agent examples
+  </Card>
+</CardGroup>

@@ -1,0 +1,576 @@
+---
+title: 'FAQ'
+description: 'Frequently asked questions about Sardis'
+icon: 'circle-question'
+---
+
+## General
+
+<AccordionGroup>
+  <Accordion title="What is Sardis?" icon="building">
+    Sardis is the **Payment OS for the Agent Economy** - infrastructure enabling AI agents to make real financial transactions safely through non-custodial MPC wallets with natural language spending policies.
+
+    AI agents can reason, but they cannot be trusted with money. Sardis is how they earn that trust.
+  </Accordion>
+
+  <Accordion title="How does Sardis prevent financial hallucinations?" icon="shield">
+    Sardis uses a **policy firewall** that validates every transaction before execution:
+
+    1. **Natural language policies** - "Max $100/day on cloud services"
+    2. **Real-time validation** - Every transaction checked against policy
+    3. **Fail-closed security** - Default deny on policy violations
+    4. **Mandate chain verification** - AP2 protocol ensures intent → cart → payment
+
+    An agent accidentally trying to spend $10,000 instead of $100 will be blocked by the policy engine.
+  </Accordion>
+
+  <Accordion title="Is Sardis open source?" icon="code">
+    Sardis uses an **open-core licensing model**:
+
+    **MIT License (Open Source):**
+    - SDKs (`sardis`, `@sardis/sdk`, `@sardis/mcp-server`)
+    - MCP Server
+    - Integration adapters
+    - CLI tools
+    - All examples
+
+    **Proprietary:**
+    - Core banking infrastructure
+    - Policy engine internals
+    - MPC node management
+
+    See [LICENSE.txt](https://github.com/EfeDurmaz16/sardis/blob/main/LICENSE.txt) for details.
+  </Accordion>
+
+  <Accordion title="Which AI frameworks does Sardis support?" icon="puzzle-piece">
+    Sardis integrates with **9 major AI frameworks**:
+
+    | Framework | Package | Status |
+    |-----------|---------|--------|
+    | MCP (Claude, Cursor, ChatGPT) | `@sardis/mcp-server` | ✅ |
+    | LangChain | `sardis-langchain` | ✅ |
+    | CrewAI | `sardis-crewai` | ✅ |
+    | OpenAI Functions | `sardis-openai` | ✅ |
+    | Gemini / ADK | `sardis-adk` | ✅ |
+    | Vercel AI SDK | `@sardis/ai-sdk` | ✅ |
+    | Claude Agent SDK | `sardis-agent-sdk` | ✅ |
+    | LlamaIndex | `sardis` | ✅ |
+    | Mastra | `@sardis/sdk` | ✅ |
+
+    All frameworks use the same policy engine and MPC wallet infrastructure.
+  </Accordion>
+
+  <Accordion title="How much does Sardis cost?" icon="dollar-sign">
+    **Sandbox (Free):**
+    - Unlimited testnet transactions
+    - Full API access
+    - All framework integrations
+    - Community support
+
+    **Production:**
+    - Pay-as-you-go: **1% transaction fee** (min $0.10)
+    - Volume discounts available
+    - Dedicated support
+    - SLA guarantees
+
+    **Enterprise:**
+    - Custom pricing
+    - Dedicated infrastructure
+    - White-label options
+    - Priority support
+
+    [Contact sales](mailto:sales@sardis.sh) for enterprise pricing.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Technical
+
+<AccordionGroup>
+  <Accordion title="Which blockchains does Sardis support?" icon="link">
+    Sardis supports **5 EVM-compatible chains** with multiple stablecoins:
+
+    | Chain | Tokens | Mainnet | Testnet |
+    |-------|--------|---------|--------|
+    | **Arc** (Circle L1) | USDC, EURC | ✅ | ✅ |
+    | **Base** | USDC, EURC | ✅ | ✅ |
+    | **Polygon** | USDC, USDT, EURC | ✅ | ✅ |
+    | **Ethereum** | USDC, USDT, PYUSD, EURC | ✅ | ✅ |
+    | **Arbitrum** | USDC, USDT | ✅ | ✅ |
+    | **Optimism** | USDC, USDT | ✅ | ✅ |
+
+    More chains coming soon: Solana, Avalanche, BNB Chain.
+  </Accordion>
+
+  <Accordion title="How are private keys managed?" icon="key">
+    Sardis uses **non-custodial MPC (Multi-Party Computation)** via Turnkey:
+
+    - **Never stores private keys** - Keys exist only during signing
+    - **Distributed key shares** - No single point of compromise
+    - **Hardware security modules** - FIPS 140-2 Level 3 certified
+    - **Threshold signatures** - 2-of-3 or 3-of-5 configurations
+
+    You maintain full control. Sardis cannot access your funds.
+  </Accordion>
+
+  <Accordion title="What are spending policies?" icon="gavel">
+    **Spending policies** are programmable guardrails written in natural language:
+
+    ```python
+    policy = Policy(
+        max_per_tx="100.00",           # Per-transaction limit
+        max_per_day="500.00",          # Daily spending cap
+        allowed_merchants=[             # Merchant allowlist
+            "openai.com",
+            "anthropic.com",
+            "*.amazonaws.com"
+        ],
+        forbidden_categories=[          # Category denylist
+            "gambling",
+            "adult_content"
+        ],
+        require_approval_above="1000"  # Human approval threshold
+    )
+    ```
+
+    Policies are evaluated **before every transaction** and cannot be overridden by the agent.
+  </Accordion>
+
+  <Accordion title="What is the AP2 protocol?" icon="shield-check">
+    **AP2 (Agent Payment Protocol)** is a consortium standard from Google, PayPal, Mastercard, and Visa for agent payments.
+
+    **Mandate Chain:** Intent → Cart → Payment
+
+    1. **Intent** - User approves payment intent
+    2. **Cart** - Agent constructs cart with items
+    3. **Payment** - Transaction executed with full chain
+
+    Sardis verifies the complete mandate chain before executing any payment, ensuring:
+    - User authorized the intent
+    - Cart matches the intent
+    - Payment matches the cart
+
+    This prevents agents from making unauthorized purchases.
+  </Accordion>
+
+  <Accordion title="Can agents send money to each other?" icon="handshake">
+    Yes! Sardis supports **Agent-to-Agent (A2A)** payments with escrow mechanics:
+
+    ```python
+    # Alice pays Bob for a service
+    result = alice.pay(
+        to=bob.agent_id,
+        amount=25,
+        purpose="Data analysis service"
+    )
+    ```
+
+    **Features:**
+    - Escrow with release conditions
+    - Dispute resolution
+    - Cryptographic receipts
+    - Reputation tracking
+
+    See the [Agent-to-Agent example](https://github.com/EfeDurmaz16/sardis/blob/main/examples/agent_to_agent.py).
+  </Accordion>
+
+  <Accordion title="How fast are transactions?" icon="clock">
+    Transaction speed depends on the blockchain:
+
+    | Chain | Confirmation Time | Cost |
+    |-------|------------------|------|
+    | **Arc** | 1-2 seconds | $0.001 |
+    | **Base** | 2-3 seconds | $0.01 |
+    | **Polygon** | 5-10 seconds | $0.02 |
+    | **Arbitrum** | 10-15 seconds | $0.05 |
+    | **Optimism** | 10-15 seconds | $0.05 |
+    | **Ethereum** | 15-30 seconds | $2-5 |
+
+    Sardis automatically routes to the fastest/cheapest chain for your use case.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Compliance & Security
+
+<AccordionGroup>
+  <Accordion title="Is Sardis compliant with financial regulations?" icon="scale-balanced">
+    Yes. Sardis implements:
+
+    **KYC (Know Your Customer):**
+    - Persona integration for identity verification
+    - Automated document collection
+    - Liveness checks
+
+    **AML (Anti-Money Laundering):**
+    - Elliptic sanctions screening
+    - Transaction monitoring
+    - Suspicious Activity Reports (SAR)
+
+    **Data Privacy:**
+    - GDPR compliant
+    - SOC 2 Type II certified
+    - End-to-end encryption
+
+    **Licensing:**
+    - Money Transmitter Licenses (state-by-state)
+    - Virtual Currency Business Activity (VCBA)
+  </Accordion>
+
+  <Accordion title="What happens if an agent gets compromised?" icon="triangle-exclamation">
+    Sardis has multiple layers of protection:
+
+    **1. Policy Firewall:**
+    - Spending limits still enforced
+    - Merchant allowlist prevents unauthorized destinations
+    - Transaction volume alerts
+
+    **2. Anomaly Detection:**
+    - Behavioral analysis flags unusual activity
+    - Automatic wallet freeze on suspicious patterns
+    - Real-time alerts to administrators
+
+    **3. Human Approval:**
+    - High-value transactions require human approval
+    - Configurable approval thresholds
+    - Multi-signature support
+
+    **4. Emergency Controls:**
+    - Instant wallet freeze via API or dashboard
+    - Transaction rollback (within escrow period)
+    - Fund recovery procedures
+  </Accordion>
+
+  <Accordion title="Where is transaction data stored?" icon="database">
+    **On-Chain:**
+    - Transaction hashes
+    - Wallet addresses
+    - Token transfers
+
+    **Off-Chain (Encrypted):**
+    - User identity (KYC data)
+    - Spending policies
+    - Transaction metadata
+    - Audit logs
+
+    **Data Retention:**
+    - Transaction history: 7 years (regulatory requirement)
+    - Audit logs: Append-only, immutable
+    - KYC data: Until account closure + 5 years
+
+    **Data Access:**
+    - You own your data
+    - Export via API or dashboard
+    - GDPR right to deletion (after retention period)
+  </Accordion>
+
+  <Accordion title="Has Sardis been audited?" icon="magnifying-glass">
+    Yes. Sardis undergoes regular security audits:
+
+    **Smart Contracts:**
+    - Audited by Trail of Bits (February 2026)
+    - OpenZeppelin security review
+    - Continuous monitoring with Forta
+
+    **Infrastructure:**
+    - SOC 2 Type II certification
+    - Penetration testing (quarterly)
+    - Bug bounty program ($100k max payout)
+
+    **Compliance:**
+    - Annual AML/CFT audit
+    - Quarterly policy reviews
+
+    See [SECURITY_AUDIT_REPORT.md](https://github.com/EfeDurmaz16/sardis/blob/main/SECURITY_AUDIT_REPORT.md) for details.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="My transaction failed. What do I do?" icon="circle-xmark">
+    **Common causes:**
+
+    1. **Insufficient balance**
+       ```bash
+       # Check wallet balance
+       sardis wallets get <wallet_id>
+       ```
+
+    2. **Policy violation**
+       ```python
+       # Check policy before paying
+       result = sardis.policies.check(
+           wallet_id=wallet_id,
+           amount="100",
+           merchant="example.com"
+       )
+       if not result.allowed:
+           print(f"Blocked: {result.reason}")
+       ```
+
+    3. **Network congestion**
+       - Try a different chain (Arc is fastest)
+       - Increase gas price
+       - Wait and retry
+
+    4. **Sanctions screening**
+       - Recipient may be on sanctions list
+       - Contact support for review
+
+    Still stuck? Check the [error reference](/api-reference/errors).
+  </Accordion>
+
+  <Accordion title="How do I debug policy violations?" icon="bug">
+    Use the policy checker to see why a transaction was blocked:
+
+    ```python
+    from sardis import SardisClient
+
+    client = SardisClient(api_key="sk_...")
+
+    # Check policy before transaction
+    result = client.policies.check(
+        wallet_id="wallet_abc",
+        amount="250.00",
+        merchant="example.com",
+        category="software"
+    )
+
+    print(f"Allowed: {result.allowed}")
+    print(f"Reason: {result.reason}")
+    print(f"Policy: {result.policy}")
+    ```
+
+    **Common violations:**
+    - Amount exceeds daily limit
+    - Merchant not in allowlist
+    - Category is forbidden
+    - Time-based restriction (e.g., "no payments on weekends")
+  </Accordion>
+
+  <Accordion title="MCP server not working in Claude Desktop" icon="server">
+    **Troubleshooting steps:**
+
+    1. **Check installation:**
+       ```bash
+       npx @sardis/mcp-server@latest start
+       ```
+
+    2. **Verify configuration:**
+       ```json
+       // ~/Library/Application Support/Claude/claude_desktop_config.json
+       {
+         "mcpServers": {
+           "sardis": {
+             "command": "npx",
+             "args": ["@sardis/mcp-server", "start"],
+             "env": {
+               "SARDIS_API_KEY": "sk_..."
+             }
+           }
+         }
+       }
+       ```
+
+    3. **Check API key:**
+       ```bash
+       # Test API key
+       curl https://api.sardis.sh/v2/health \
+         -H "Authorization: Bearer sk_..."
+       ```
+
+    4. **View logs:**
+       - Mac: `~/Library/Logs/Claude/mcp*.log`
+       - Windows: `%APPDATA%\Claude\logs\mcp*.log`
+
+    Still not working? Join [Discord](https://discord.gg/XMA9JwDJ) for help.
+  </Accordion>
+
+  <Accordion title="How do I test without spending real money?" icon="flask">
+    Use **testnet mode** for free testing:
+
+    ```python
+    from sardis import Sardis
+
+    # Testnet client
+    sardis = Sardis(
+        api_key="sk_test_...",
+        environment="sandbox"  # Uses testnet
+    )
+
+    # Create testnet wallet
+    wallet = sardis.wallets.create(
+        agent_id="test_agent",
+        chain="base_sepolia",  # Testnet
+        currency="USDC"
+    )
+
+    # Get testnet funds
+    sardis.wallets.fund(wallet.wallet_id, amount="1000")
+    ```
+
+    **Testnet chains:**
+    - `base_sepolia`
+    - `polygon_amoy`
+    - `ethereum_sepolia`
+    - `arbitrum_sepolia`
+    - `optimism_sepolia`
+
+    No real money required. Unlimited testnet transactions.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="How should I set spending limits?" icon="sliders">
+    **Conservative approach (recommended):**
+
+    ```python
+    policy = Policy(
+        max_per_tx="50.00",      # Start small
+        max_per_day="200.00",    # 4x per-tx limit
+        max_per_month="2000.00", # 10x daily limit
+        require_approval_above="100.00"  # Human review for large purchases
+    )
+    ```
+
+    **Tips:**
+    - Start with low limits, increase gradually
+    - Monitor spending patterns for 1-2 weeks
+    - Set approval thresholds at 2x typical transaction size
+    - Use merchant allowlists to prevent drift
+    - Review audit logs weekly
+  </Accordion>
+
+  <Accordion title="Should I use one wallet per agent or share wallets?" icon="wallet">
+    **One wallet per agent (recommended):**
+
+    ✅ **Pros:**
+    - Isolated risk (one agent compromised ≠ all wallets)
+    - Individual spending policies
+    - Clear audit trails
+    - Easier budget allocation
+
+    ❌ **Cons:**
+    - More wallets to manage
+    - Higher setup cost
+
+    **Shared wallet:**
+
+    ✅ **Pros:**
+    - Simpler management
+    - Pooled liquidity
+
+    ❌ **Cons:**
+    - Higher risk exposure
+    - Harder to track individual agent spending
+    - One policy applies to all agents
+
+    **Verdict:** Use one wallet per agent unless you have a strong reason not to.
+  </Accordion>
+
+  <Accordion title="How do I handle agent upgrades?" icon="rotate">
+    **Safe upgrade process:**
+
+    1. **Create new agent version:**
+       ```python
+       agent_v2 = sardis.agents.create(
+           name="my-agent-v2",
+           description="Upgraded version with new features"
+       )
+       ```
+
+    2. **Test with separate wallet:**
+       ```python
+       test_wallet = sardis.wallets.create(
+           agent_id=agent_v2.agent_id,
+           currency="USDC",
+           max_per_tx="10.00"  # Low limit for testing
+       )
+       ```
+
+    3. **Run parallel for 1 week:**
+       - Old agent handles 80% of traffic
+       - New agent handles 20% (canary deployment)
+       - Monitor error rates and spending patterns
+
+    4. **Migrate wallet:**
+       ```python
+       sardis.wallets.transfer_ownership(
+           wallet_id=production_wallet_id,
+           new_agent_id=agent_v2.agent_id
+       )
+       ```
+
+    5. **Decommission old agent:**
+       ```python
+       sardis.agents.archive(agent_v1.agent_id)
+       ```
+  </Accordion>
+
+  <Accordion title="What's the best way to monitor agent spending?" icon="chart-line">
+    **Use multiple monitoring layers:**
+
+    **1. Real-time alerts:**
+    ```python
+    from sardis_v2_core.alerts import AlertManager
+
+    alerts = AlertManager()
+    alerts.create(
+        name="High spending alert",
+        condition="daily_spend > 80% of limit",
+        channels=["email", "slack"]
+    )
+    ```
+
+    **2. Daily summaries:**
+    ```python
+    # Get spending summary
+    summary = sardis.analytics.get_spending_summary(
+        agent_id="agent_abc",
+        period="last_7_days"
+    )
+    print(f"Total spent: ${summary.total}")
+    print(f"Top merchants: {summary.top_merchants}")
+    ```
+
+    **3. Audit logs:**
+    ```python
+    # Review all transactions
+    transactions = sardis.ledger.get_transactions(
+        wallet_id="wallet_abc",
+        limit=100
+    )
+    ```
+
+    **4. Dashboard:**
+    - https://sardis.sh/dashboard
+    - Real-time spending graphs
+    - Policy violation logs
+    - Budget utilization charts
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Still Have Questions?
+
+<CardGroup cols={3}>
+  <Card title="Discord" icon="discord" href="https://discord.gg/XMA9JwDJ">
+    Ask the community
+  </Card>
+  <Card title="GitHub" icon="github" href="https://github.com/EfeDurmaz16/sardis/issues">
+    Open an issue
+  </Card>
+  <Card title="Email" icon="envelope" href="mailto:support@sardis.sh">
+    Contact support
+  </Card>
+</CardGroup>

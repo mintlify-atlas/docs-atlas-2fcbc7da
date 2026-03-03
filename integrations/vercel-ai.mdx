@@ -1,0 +1,700 @@
+---
+title: 'Vercel AI SDK'
+description: 'Add payment tools to Vercel AI SDK for streaming agents with policy guardrails'
+icon: 'triangle'
+---
+
+## Overview
+
+The **@sardis/ai-sdk** package provides native Vercel AI SDK tools for executing payments with built-in policy guardrails. Works with `generateText`, `streamText`, and all AI SDK model providers.
+
+## When to Use Vercel AI SDK
+
+- **TypeScript/JavaScript Agents**: Build agents in Node.js or Edge Runtime
+- **Streaming Responses**: Real-time payment execution with `streamText`
+- **Multi-Model Support**: Works with OpenAI, Anthropic, Google, and all AI SDK providers
+- **Next.js Integration**: Build payment-enabled chatbots in Next.js
+- **Edge Runtime**: Deploy payment agents on Vercel Edge
+
+## Installation
+
+```bash
+npm install @sardis/ai-sdk ai
+# or
+pnpm add @sardis/ai-sdk ai
+# or
+yarn add @sardis/ai-sdk ai
+```
+
+<Tip>
+  Requires Vercel AI SDK v3.0.0+ and Node.js 18+
+</Tip>
+
+## Quick Start
+
+<CodeGroup>
+
+```typescript Basic Usage
+import { generateText } from 'ai'
+import { openai } from '@ai-sdk/openai'
+import { createSardisTools } from '@sardis/ai-sdk'
+
+const tools = createSardisTools({
+  apiKey: process.env.SARDIS_API_KEY!,
+  walletId: 'wallet_abc123',
+})
+
+const { text, toolResults } = await generateText({
+  model: openai('gpt-4o'),
+  tools,
+  prompt: 'Check my balance and pay $50 to merchant_xyz for API credits',
+})
+
+console.log(text)
+// "I've checked your balance (1,000 USDC available) and successfully 
+//  paid $50 to merchant_xyz. Transaction ID: tx_abc123"
+```
+
+```typescript Full Example
+import { generateText, tool } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { z } from "zod";
+import { SardisClient } from "@sardis/sdk";
+
+const sardis = new SardisClient({ 
+  apiKey: process.env.SARDIS_API_KEY ?? "sim_demo" 
+});
+
+async function main() {
+  // Create agent + wallet
+  const agent = await sardis.agents.create({
+    name: "vercel-ai-agent",
+    description: "Vercel AI SDK procurement example agent",
+  });
+
+  const wallet = await sardis.wallets.create({
+    agent_id: agent.agent_id,
+    currency: "USDC",
+    limit_per_tx: "100.00",
+    limit_total: "500.00",
+  });
+
+  const { text, toolResults } = await generateText({
+    model: openai("gpt-4o"),
+    system:
+      "You are a procurement agent with a Sardis wallet. " +
+      "You can make payments for software and API credits. " +
+      "Always explain what you are purchasing before paying.",
+    prompt: "Purchase $25 of OpenAI API credits for our research team.",
+    tools: {
+      sardisPay: tool({
+        description:
+          "Execute a payment through Sardis with policy enforcement",
+        parameters: z.object({
+          to: z.string().describe("Recipient address or merchant ID"),
+          amount: z.string().describe("Amount in USD (e.g. '25.00')"),
+          token: z.enum(["USDC", "USDT", "EURC"]),
+          purpose: z.string().describe("Reason for the payment"),
+        }),
+        execute: async ({ to, amount, token, purpose }) => {
+          const result = await sardis.wallets.transfer(wallet.wallet_id, {
+            destination: to,
+            amount,
+            token,
+            chain: "base",
+            domain: to,
+            memo: purpose,
+          });
+          return {
+            status: result.status,
+            txHash: result.tx_hash,
+            amount: result.amount,
+            fromAddress: result.from_address,
+            chain: result.chain,
+          };
+        },
+      }),
+      sardisBalance: tool({
+        description: "Check the wallet balance and remaining limits",
+        parameters: z.object({}),
+        execute: async () => {
+          const info = await sardis.wallets.getBalance(
+            wallet.wallet_id, "base", "USDC"
+          );
+          return {
+            balance: info.balance,
+            token: info.token,
+            chain: info.chain,
+            walletId: info.wallet_id,
+          };
+        },
+      }),
+    },
+    maxSteps: 5,
+  });
+
+  console.log("Agent response:", text);
+  console.log("Tool results:", JSON.stringify(toolResults, null, 2));
+}
+
+main().catch(console.error);
+```
+
+</CodeGroup>
+
+## Available Tools
+
+The `createSardisTools` function returns 7 pre-configured tools:
+
+<CardGroup cols={2}>
+  <Card title="sardis_pay" icon="dollar-sign">
+    Execute payment from wallet
+  </Card>
+  <Card title="sardis_create_hold" icon="clock">
+    Pre-authorize funds for future payment
+  </Card>
+  <Card title="sardis_capture_hold" icon="check">
+    Capture previously authorized hold
+  </Card>
+  <Card title="sardis_void_hold" icon="xmark">
+    Cancel hold and release funds
+  </Card>
+  <Card title="sardis_check_policy" icon="shield-check">
+    Validate payment against policy
+  </Card>
+  <Card title="sardis_get_balance" icon="wallet">
+    Get current wallet balance
+  </Card>
+  <Card title="sardis_get_spending" icon="chart-line">
+    Get spending summary and analytics
+  </Card>
+</CardGroup>
+
+## Tool Details
+
+### sardis_pay
+
+Execute a payment with policy enforcement:
+
+```typescript
+import { createSardisTools } from '@sardis/ai-sdk'
+
+const tools = createSardisTools({
+  apiKey: process.env.SARDIS_API_KEY!,
+  walletId: 'wallet_abc123',
+})
+
+// The tool is called automatically by the model
+const result = await generateText({
+  model: openai('gpt-4o'),
+  tools,
+  prompt: 'Pay $50 to openai.com for API credits',
+})
+```
+
+Returns:
+
+```typescript
+{
+  success: true,
+  transactionId: "tx_abc123",
+  txHash: "0x7f3b...a2c9",
+  amount: 50,
+  token: "USDC",
+  chain: "base",
+  status: "confirmed",
+  timestamp: "2024-01-15T10:30:00Z"
+}
+```
+
+### sardis_create_hold
+
+Create a hold (pre-authorization) for variable amounts:
+
+```typescript
+const result = await generateText({
+  model: openai('gpt-4o'),
+  tools,
+  prompt: 'Reserve $100 for a hotel booking (final amount TBD)',
+})
+```
+
+Returns:
+
+```typescript
+{
+  success: true,
+  holdId: "hold_abc123",
+  amount: 100,
+  merchant: "hotel.com",
+  expiresAt: "2024-01-20T10:30:00Z",
+  status: "active"
+}
+```
+
+### sardis_capture_hold
+
+Capture a hold with optional partial amount:
+
+```typescript
+const result = await generateText({
+  model: openai('gpt-4o'),
+  tools,
+  prompt: 'Capture hold_abc123 for the final amount of $87.50',
+})
+```
+
+### sardis_check_policy
+
+Validate before executing:
+
+```typescript
+const result = await generateText({
+  model: openai('gpt-4o'),
+  tools,
+  prompt: 'Can I spend $500 on aws.amazon.com?',
+})
+```
+
+Returns:
+
+```typescript
+{
+  allowed: true,
+  reason: "Payment within limits and allowed merchant"
+}
+```
+
+## Configuration
+
+### Basic Configuration
+
+```typescript
+const tools = createSardisTools({
+  apiKey: string,        // Required: Your Sardis API key
+  walletId: string,      // Required: Wallet to operate on
+})
+```
+
+### Advanced Configuration
+
+```typescript
+const tools = createSardisTools({
+  // Required
+  apiKey: process.env.SARDIS_API_KEY!,
+  walletId: 'wallet_abc123',
+  
+  // Optional
+  agentId: 'agent_xyz789',           // Agent identifier for attribution
+  baseUrl: 'https://api.sardis.sh',  // Custom API URL
+  simulationMode: false,             // Test without real transactions
+  
+  // Policy Guardrails
+  maxPaymentAmount: 100,             // Max single payment limit ($)
+  blockedCategories: ['gambling', 'adult'],
+  allowedMerchants: ['openai.com', 'anthropic.com', 'aws.com'],
+})
+```
+
+### Tool Sets
+
+Use different tool sets for different use cases:
+
+```typescript
+import {
+  createSardisTools,           // Full 7-tool set
+  createMinimalSardisTools,    // Just pay + balance
+  createReadOnlySardisTools,   // Analytics only (no payments)
+} from '@sardis/ai-sdk'
+
+// Minimal agent (2 tools)
+const minimalTools = createMinimalSardisTools({
+  apiKey: process.env.SARDIS_API_KEY!,
+  walletId: 'wallet_abc123',
+})
+
+// Observer agent (3 tools)
+const readOnlyTools = createReadOnlySardisTools({
+  apiKey: process.env.SARDIS_API_KEY!,
+  walletId: 'wallet_abc123',
+})
+```
+
+## Streaming
+
+Use with `streamText` for real-time responses:
+
+```typescript
+import { streamText } from 'ai'
+import { openai } from '@ai-sdk/openai'
+import { createSardisTools } from '@sardis/ai-sdk'
+
+const tools = createSardisTools({
+  apiKey: process.env.SARDIS_API_KEY!,
+  walletId: 'wallet_abc123',
+})
+
+const result = streamText({
+  model: openai('gpt-4o'),
+  tools,
+  prompt: 'Pay $25 to merchant_abc for API credits',
+})
+
+for await (const chunk of result.textStream) {
+  process.stdout.write(chunk)
+}
+
+// Output:
+// "Checking your balance..."
+// "Balance confirmed: 1,000 USDC available."
+// "Executing payment of $25..."
+// "Payment successful! Transaction ID: tx_abc123"
+```
+
+## Multi-Model Support
+
+Works with all Vercel AI SDK model providers:
+
+<Tabs>
+  <Tab title="OpenAI">
+    ```typescript
+    import { openai } from '@ai-sdk/openai'
+    
+    const result = await generateText({
+      model: openai('gpt-4o'),
+      tools: sardis.tools,
+      prompt: 'Pay $50 to AWS',
+    })
+    ```
+  </Tab>
+  <Tab title="Anthropic">
+    ```typescript
+    import { anthropic } from '@ai-sdk/anthropic'
+    
+    const result = await generateText({
+      model: anthropic('claude-3-5-sonnet-20241022'),
+      tools: sardis.tools,
+      prompt: 'Pay $50 to AWS',
+    })
+    ```
+  </Tab>
+  <Tab title="Google">
+    ```typescript
+    import { google } from '@ai-sdk/google'
+    
+    const result = await generateText({
+      model: google('gemini-1.5-pro'),
+      tools: sardis.tools,
+      prompt: 'Pay $50 to AWS',
+    })
+    ```
+  </Tab>
+  <Tab title="Mistral">
+    ```typescript
+    import { mistral } from '@ai-sdk/mistral'
+    
+    const result = await generateText({
+      model: mistral('mistral-large-latest'),
+      tools: sardis.tools,
+      prompt: 'Pay $50 to AWS',
+    })
+    ```
+  </Tab>
+</Tabs>
+
+## SardisProvider
+
+Use the provider for advanced features:
+
+```typescript
+import { SardisProvider } from '@sardis/ai-sdk'
+
+const sardis = new SardisProvider({
+  apiKey: process.env.SARDIS_API_KEY!,
+  walletId: 'wallet_abc123',
+  enableLogging: true,
+  onTransaction: async (event) => {
+    // Log to database
+    await db.transactions.insert({
+      id: event.transactionId,
+      amount: event.amount,
+      recipient: event.to,
+      status: event.status,
+      timestamp: event.timestamp,
+    })
+  },
+})
+
+const { text } = await generateText({
+  model: openai('gpt-4o'),
+  tools: sardis.tools,
+  system: sardis.systemPrompt,  // Includes payment guidelines
+  prompt: 'Check balance and pay $25 for API credits',
+})
+```
+
+## Direct API Access
+
+The provider exposes the Sardis API directly:
+
+```typescript
+const sardis = new SardisProvider({
+  apiKey: process.env.SARDIS_API_KEY!,
+  walletId: 'wallet_abc123',
+})
+
+// Check balance
+const balance = await sardis.getBalance()
+console.log(`Available: $${balance.available}`)
+
+// Execute payment
+const result = await sardis.pay({
+  to: 'merchant_openai',
+  amount: 50,
+  token: 'USDC',
+  memo: 'API credits',
+})
+
+if (result.success) {
+  console.log(`Paid! TX: ${result.txHash}`)
+}
+```
+
+## Policy Enforcement
+
+Set guardrails to prevent unauthorized spending:
+
+```typescript
+const tools = createSardisTools({
+  apiKey: process.env.SARDIS_API_KEY!,
+  walletId: 'wallet_abc123',
+  
+  // Enforce limits
+  maxPaymentAmount: 100,  // Block payments over $100
+  
+  // Block categories
+  blockedCategories: ['gambling', 'adult', 'weapons'],
+  
+  // Whitelist merchants (optional)
+  allowedMerchants: ['openai.com', 'anthropic.com', 'aws.com'],
+})
+
+// This will fail with policy violation
+const result = await generateText({
+  model: openai('gpt-4o'),
+  tools,
+  prompt: 'Pay $500 to some_casino.com',
+})
+// Agent: "I cannot process this payment. It violates the spending policy: 
+//         Amount $500 exceeds maximum allowed payment of $100"
+```
+
+## Holds (Pre-Authorization)
+
+Use holds when the final amount isn't known:
+
+```typescript
+const result = await generateText({
+  model: openai('gpt-4o'),
+  tools,
+  prompt: `
+    I need to book a hotel room for 2 nights at approximately $150/night.
+    Create a hold for the estimated total, then when I confirm the
+    exact price of $287.50, capture that amount.
+  `,
+})
+
+// Agent will:
+// 1. Create hold for $300 (estimated)
+// 2. Receive confirmation of $287.50
+// 3. Capture hold for $287.50 (partial capture)
+// 4. Remaining $12.50 released back to wallet
+```
+
+## Next.js Integration
+
+<Tabs>
+  <Tab title="App Router">
+    ```typescript app/api/chat/route.ts
+    import { streamText } from 'ai'
+    import { openai } from '@ai-sdk/openai'
+    import { createSardisTools } from '@sardis/ai-sdk'
+    
+    export const runtime = 'edge'
+    
+    export async function POST(req: Request) {
+      const { messages } = await req.json()
+      
+      const tools = createSardisTools({
+        apiKey: process.env.SARDIS_API_KEY!,
+        walletId: req.headers.get('x-wallet-id')!,
+      })
+      
+      const result = streamText({
+        model: openai('gpt-4o'),
+        tools,
+        messages,
+      })
+      
+      return result.toDataStreamResponse()
+    }
+    ```
+  </Tab>
+  <Tab title="Client Component">
+    ```typescript app/chat.tsx
+    'use client'
+    
+    import { useChat } from 'ai/react'
+    
+    export function Chat() {
+      const { messages, input, handleInputChange, handleSubmit } = useChat({
+        api: '/api/chat',
+        headers: {
+          'x-wallet-id': 'wallet_abc123',
+        },
+      })
+      
+      return (
+        <div>
+          {messages.map(m => (
+            <div key={m.id}>
+              <strong>{m.role}:</strong> {m.content}
+            </div>
+          ))}
+          
+          <form onSubmit={handleSubmit}>
+            <input
+              value={input}
+              onChange={handleInputChange}
+              placeholder="Pay $50 to OpenAI..."
+            />
+            <button type="submit">Send</button>
+          </form>
+        </div>
+      )
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Error Handling
+
+```typescript
+import { createSardisTools } from '@sardis/ai-sdk'
+
+const tools = createSardisTools({
+  apiKey: process.env.SARDIS_API_KEY!,
+  walletId: 'wallet_abc123',
+})
+
+const result = await generateText({
+  model: openai('gpt-4o'),
+  tools,
+  prompt: 'Pay $1000 to merchant_xyz',
+})
+
+// Check tool results
+for (const toolResult of result.toolResults) {
+  if (toolResult.toolName === 'sardis_pay') {
+    const paymentResult = toolResult.result as PaymentResult
+    
+    if (!paymentResult.success) {
+      console.error(`Payment failed: ${paymentResult.error}`)
+      // Handle: insufficient_balance, policy_violation, network_error
+    }
+  }
+}
+```
+
+## TypeScript Types
+
+Full TypeScript support:
+
+```typescript
+import type {
+  SardisToolsConfig,
+  PaymentResult,
+  HoldResult,
+  PolicyCheckResult,
+  BalanceResult,
+  TransactionEvent,
+} from '@sardis/ai-sdk'
+
+const config: SardisToolsConfig = {
+  apiKey: process.env.SARDIS_API_KEY!,
+  walletId: 'wallet_abc123',
+  maxPaymentAmount: 100,
+}
+
+const onTransaction = (event: TransactionEvent) => {
+  console.log(`Transaction ${event.transactionId}: ${event.status}`)
+}
+```
+
+## Best Practices
+
+### 1. Use Environment Variables
+
+```typescript
+// ✓ Good
+const tools = createSardisTools({
+  apiKey: process.env.SARDIS_API_KEY!,
+  walletId: process.env.SARDIS_WALLET_ID!,
+})
+
+// ❌ Bad - Hardcoded secrets
+const tools = createSardisTools({
+  apiKey: 'sk_live_abc123...',
+  walletId: 'wallet_xyz789',
+})
+```
+
+### 2. Set Policy Guardrails
+
+```typescript
+const tools = createSardisTools({
+  apiKey: process.env.SARDIS_API_KEY!,
+  walletId: 'wallet_abc123',
+  maxPaymentAmount: 100,  // Prevent large payments
+  allowedMerchants: ['openai.com', 'anthropic.com'],  // Whitelist
+})
+```
+
+### 3. Log Transactions
+
+```typescript
+const sardis = new SardisProvider({
+  apiKey: process.env.SARDIS_API_KEY!,
+  walletId: 'wallet_abc123',
+  onTransaction: async (event) => {
+    await db.transactions.insert(event)
+  },
+})
+```
+
+### 4. Use Minimal Tools When Possible
+
+```typescript
+// For simple payment agents
+const tools = createMinimalSardisTools({
+  apiKey: process.env.SARDIS_API_KEY!,
+  walletId: 'wallet_abc123',
+})
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="OpenAI Integration" icon="robot" href="/integrations/openai">
+    Use function calling with OpenAI
+  </Card>
+  <Card title="Anthropic Claude" icon="brain" href="/integrations/anthropic">
+    Build Claude agents with Sardis
+  </Card>
+  <Card title="Policy Engine" icon="shield" href="/core-concepts/policy-engine">
+    Understand spending policy rules
+  </Card>
+  <Card title="TypeScript SDK" icon="code" href="/api-reference/typescript-sdk">
+    Full TypeScript SDK reference
+  </Card>
+</CardGroup>

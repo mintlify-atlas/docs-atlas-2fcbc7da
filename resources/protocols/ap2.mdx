@@ -1,0 +1,405 @@
+---
+title: 'AP2 (Agent Payment Protocol)'
+description: 'Industry-standard protocol for secure AI agent payments'
+icon: 'shield-check'
+---
+
+<Info>
+  AP2 is a consortium standard developed by **Google, PayPal, Mastercard, and Visa** for secure AI agent payment transactions.
+</Info>
+
+## Overview
+
+The **Agent Payment Protocol (AP2)** ensures that AI agents cannot make unauthorized purchases by enforcing a cryptographic mandate chain that links user intent to cart construction to final payment execution.
+
+**Problem:** AI agents can hallucinate, make mistakes, or be compromised. Without guardrails, an agent might accidentally spend $10,000 instead of $100.
+
+**Solution:** AP2 requires explicit user approval at each step and cryptographically verifies the complete chain before executing any payment.
+
+---
+
+## Mandate Chain
+
+AP2 enforces a three-step mandate chain:
+
+```
+INTENT → CART → PAYMENT
+```
+
+<Steps>
+  <Step title="1. Intent">
+    User expresses payment intent with budget and scope:
+    
+    ```json
+    {
+      "intent_id": "intent_abc123",
+      "user_id": "user_xyz",
+      "agent_id": "agent_shopping",
+      "description": "Purchase OpenAI API credits",
+      "max_amount": "50.00",
+      "currency": "USDC",
+      "approved_at": "2026-03-03T10:00:00Z",
+      "signature": "0x..."
+    }
+    ```
+    
+    **User signs** the intent with their wallet or authentication method.
+  </Step>
+  
+  <Step title="2. Cart">
+    Agent constructs a cart matching the intent:
+    
+    ```json
+    {
+      "cart_id": "cart_def456",
+      "intent_id": "intent_abc123",
+      "items": [
+        {
+          "description": "OpenAI API credits",
+          "amount": "30.00",
+          "merchant": "openai.com",
+          "category": "ai_services"
+        }
+      ],
+      "total": "30.00",
+      "currency": "USDC",
+      "created_at": "2026-03-03T10:01:00Z",
+      "agent_signature": "0x..."
+    }
+    ```
+    
+    **Agent signs** the cart to prove it was constructed by the authorized agent.
+  </Step>
+  
+  <Step title="3. Payment">
+    Payment executes with full mandate chain:
+    
+    ```json
+    {
+      "payment_id": "pay_ghi789",
+      "cart_id": "cart_def456",
+      "intent_id": "intent_abc123",
+      "from_wallet": "0x...",
+      "to_address": "0x...",
+      "amount": "30.00",
+      "currency": "USDC",
+      "chain": "base",
+      "mandate_chain_hash": "0x...",
+      "executed_at": "2026-03-03T10:02:00Z"
+    }
+    ```
+    
+    **Sardis verifies** the complete mandate chain before execution.
+  </Step>
+</Steps>
+
+---
+
+## Verification Process
+
+Sardis validates the mandate chain before executing any payment:
+
+<AccordionGroup>
+  <Accordion title="Step 1: Intent Validation" icon="1">
+    ```python
+    def validate_intent(intent: Intent) -> bool:
+        # 1. Verify user signature
+        if not verify_signature(intent.signature, intent.user_id):
+            raise InvalidSignatureError("Intent signature invalid")
+        
+        # 2. Check intent not expired
+        if intent.approved_at < now() - timedelta(hours=24):
+            raise ExpiredIntentError("Intent expired")
+        
+        # 3. Verify intent not already used
+        if intent_cache.exists(intent.intent_id):
+            raise ReplayAttackError("Intent already used")
+        
+        return True
+    ```
+    
+    **Checks:**
+    - User signature is valid
+    - Intent is not expired (24-hour window)
+    - Intent has not been used before (replay protection)
+  </Accordion>
+  
+  <Accordion title="Step 2: Cart Validation" icon="2">
+    ```python
+    def validate_cart(cart: Cart, intent: Intent) -> bool:
+        # 1. Verify cart links to intent
+        if cart.intent_id != intent.intent_id:
+            raise IntentMismatchError("Cart does not match intent")
+        
+        # 2. Verify agent signature
+        if not verify_signature(cart.agent_signature, intent.agent_id):
+            raise InvalidSignatureError("Agent signature invalid")
+        
+        # 3. Verify total within intent budget
+        if cart.total > intent.max_amount:
+            raise BudgetExceededError(
+                f"Cart total {cart.total} exceeds intent max {intent.max_amount}"
+            )
+        
+        # 4. Verify currency matches
+        if cart.currency != intent.currency:
+            raise CurrencyMismatchError("Cart currency does not match intent")
+        
+        return True
+    ```
+    
+    **Checks:**
+    - Cart references the correct intent
+    - Agent signature is valid
+    - Cart total does not exceed intent budget
+    - Currency matches
+  </Accordion>
+  
+  <Accordion title="Step 3: Payment Validation" icon="3">
+    ```python
+    def validate_payment(payment: Payment, cart: Cart, intent: Intent) -> bool:
+        # 1. Verify payment links to cart and intent
+        if payment.cart_id != cart.cart_id:
+            raise CartMismatchError("Payment does not match cart")
+        if payment.intent_id != intent.intent_id:
+            raise IntentMismatchError("Payment does not match intent")
+        
+        # 2. Verify amount matches cart total
+        if payment.amount != cart.total:
+            raise AmountMismatchError(
+                f"Payment amount {payment.amount} != cart total {cart.total}"
+            )
+        
+        # 3. Verify mandate chain hash
+        expected_hash = hash(intent, cart, payment)
+        if payment.mandate_chain_hash != expected_hash:
+            raise MandateChainError("Mandate chain hash invalid")
+        
+        # 4. Check spending policy
+        if not policy_engine.check(payment):
+            raise PolicyViolationError("Payment violates spending policy")
+        
+        return True
+    ```
+    
+    **Checks:**
+    - Payment references correct cart and intent
+    - Amount matches cart total exactly
+    - Mandate chain hash is valid
+    - Payment passes spending policy checks
+  </Accordion>
+  
+  <Accordion title="Step 4: Execution" icon="4">
+    Only after all validation passes:
+    
+    ```python
+    async def execute_payment(payment: Payment) -> TransactionResult:
+        # All validation passed - execute on-chain
+        tx_hash = await chain_executor.transfer(
+            from_wallet=payment.from_wallet,
+            to_address=payment.to_address,
+            amount=payment.amount,
+            token=payment.currency,
+            chain=payment.chain
+        )
+        
+        # Record in append-only ledger
+        await ledger.record(
+            payment_id=payment.payment_id,
+            tx_hash=tx_hash,
+            mandate_chain={
+                "intent": intent.to_dict(),
+                "cart": cart.to_dict(),
+                "payment": payment.to_dict()
+            }
+        )
+        
+        return TransactionResult(
+            success=True,
+            tx_hash=tx_hash,
+            payment_id=payment.payment_id
+        )
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Security Features
+
+### 1. Replay Protection
+
+Each intent can only be used once:
+
+```python
+# Intent cache prevents reuse
+intent_cache.set(intent.intent_id, intent, ttl=86400)  # 24 hours
+
+if intent_cache.exists(intent.intent_id):
+    raise ReplayAttackError("Intent already used")
+```
+
+### 2. Time-Bound Intents
+
+Intents expire after 24 hours:
+
+```python
+if intent.approved_at < now() - timedelta(hours=24):
+    raise ExpiredIntentError("Intent expired")
+```
+
+### 3. Cryptographic Signatures
+
+All parties sign their contributions:
+
+- **User** signs intent (proves approval)
+- **Agent** signs cart (proves authenticity)
+- **Sardis** verifies all signatures before execution
+
+### 4. Mandate Chain Hash
+
+Cryptographic hash links all steps:
+
+```python
+def compute_mandate_hash(intent: Intent, cart: Cart, payment: Payment) -> str:
+    data = {
+        "intent_id": intent.intent_id,
+        "intent_signature": intent.signature,
+        "cart_id": cart.cart_id,
+        "cart_signature": cart.agent_signature,
+        "payment_id": payment.payment_id,
+        "amount": payment.amount,
+    }
+    return sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
+```
+
+---
+
+## Implementation Example
+
+### Python SDK
+
+```python
+from sardis import Sardis, Intent, Cart, Payment
+
+# Initialize client
+sardis = Sardis(api_key="sk_...")
+
+# Step 1: User creates intent
+intent = sardis.intents.create(
+    user_id="user_123",
+    agent_id="agent_shopping",
+    description="Purchase API credits",
+    max_amount="50.00",
+    currency="USDC"
+)
+print(f"Intent created: {intent.intent_id}")
+
+# Step 2: Agent constructs cart
+cart = sardis.carts.create(
+    intent_id=intent.intent_id,
+    items=[
+        {
+            "description": "OpenAI API credits",
+            "amount": "30.00",
+            "merchant": "openai.com"
+        }
+    ]
+)
+print(f"Cart created: {cart.cart_id}")
+
+# Step 3: Execute payment with mandate chain
+payment = sardis.payments.create(
+    intent_id=intent.intent_id,
+    cart_id=cart.cart_id,
+    from_wallet="wallet_abc",
+    to_address="0x...",
+    amount="30.00",
+    currency="USDC",
+    chain="base"
+)
+
+print(f"Payment executed: {payment.tx_hash}")
+print(f"Mandate chain verified: {payment.mandate_chain_hash}")
+```
+
+### TypeScript SDK
+
+```typescript
+import { SardisClient } from '@sardis/sdk';
+
+const client = new SardisClient({ apiKey: 'sk_...' });
+
+// Step 1: Create intent
+const intent = await client.intents.create({
+  user_id: 'user_123',
+  agent_id: 'agent_shopping',
+  description: 'Purchase API credits',
+  max_amount: '50.00',
+  currency: 'USDC',
+});
+
+// Step 2: Create cart
+const cart = await client.carts.create({
+  intent_id: intent.intent_id,
+  items: [
+    {
+      description: 'OpenAI API credits',
+      amount: '30.00',
+      merchant: 'openai.com',
+    },
+  ],
+});
+
+// Step 3: Execute payment
+const payment = await client.payments.create({
+  intent_id: intent.intent_id,
+  cart_id: cart.cart_id,
+  from_wallet: 'wallet_abc',
+  to_address: '0x...',
+  amount: '30.00',
+  currency: 'USDC',
+  chain: 'base',
+});
+
+console.log(`Payment: ${payment.tx_hash}`);
+console.log(`Mandate verified: ${payment.mandate_chain_hash}`);
+```
+
+---
+
+## Why AP2 Matters
+
+<CardGroup cols={2}>
+  <Card title="Prevents Hallucinations" icon="brain">
+    Agent mistakes are caught before money moves
+  </Card>
+  <Card title="Audit Trail" icon="list-check">
+    Complete cryptographic proof of every payment
+  </Card>
+  <Card title="User Control" icon="user-shield">
+    Users explicitly approve all spending
+  </Card>
+  <Card title="Industry Standard" icon="certificate">
+    Adopted by Google, PayPal, Mastercard, Visa
+  </Card>
+</CardGroup>
+
+---
+
+## Learn More
+
+<CardGroup cols={2}>
+  <Card title="TAP Protocol" icon="fingerprint" href="/resources/protocols/tap">
+    Agent identity verification
+  </Card>
+  <Card title="A2A Protocol" icon="handshake" href="/resources/protocols/a2a">
+    Agent-to-agent payments
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference/intents">
+    Intent and Cart API docs
+  </Card>
+  <Card title="Examples" icon="book" href="/resources/examples">
+    See AP2 in action
+  </Card>
+</CardGroup>

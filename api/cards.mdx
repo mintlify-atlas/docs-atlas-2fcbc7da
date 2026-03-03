@@ -1,0 +1,59 @@
+---
+title: 'Virtual Cards'
+description: 'Issue virtual cards for agent spending'
+---
+
+## Overview
+
+Virtual cards enable agents to make traditional card-based purchases at merchants that don't accept crypto.
+
+## Issue Card
+
+```bash cURL
+curl -X POST https://api.sardis.sh/api/v2/cards \
+  -H "Authorization: Bearer sk_live_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "wallet_id": "wallet_abc123",
+    "card_type": "multi_use",
+    "limit_per_tx": "500.00",
+    "limit_daily": "2000.00",
+    "limit_monthly": "10000.00"
+  }'
+```
+
+```python Python
+card = client.cards.issue(
+    wallet_id="wallet_abc123",
+    card_type="multi_use",
+    limit_per_tx="500.00",
+    limit_daily="2000.00"
+)
+
+print(f"Card ID: {card.card_id}")
+```
+
+## Card Types
+
+- **multi_use**: Reusable card for multiple transactions
+- **single_use**: One-time use card (useful for trials)
+- **merchant_locked**: Locked to specific merchant
+
+## Fund Card
+
+```bash cURL
+curl -X POST https://api.sardis.sh/api/v2/cards/card_abc123/fund \
+  -H "Authorization: Bearer sk_live_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "amount": "1000.00",
+    "source": "stablecoin"
+  }'
+```
+
+## List Card Transactions
+
+```bash cURL
+curl https://api.sardis.sh/api/v2/cards/card_abc123/transactions \
+  -H "Authorization: Bearer sk_live_your_api_key"
+```

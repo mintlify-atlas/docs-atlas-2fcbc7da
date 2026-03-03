@@ -1,122 +1,182 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Sardis",
+  "theme": "aspen",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#6366F1",
+    "light": "#818CF8",
+    "dark": "#4F46E5"
   },
   "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/EfeDurmaz16/sardis"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/EfeDurmaz16/sardis"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Get Started",
             "pages": [
-              "index",
+              "introduction",
               "quickstart",
-              "development"
+              "installation"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/wallets",
+              "concepts/policies",
+              "concepts/agents",
+              "concepts/payments",
+              "concepts/compliance"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Framework Integrations",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "integrations/mcp",
+              "integrations/langchain",
+              "integrations/openai",
+              "integrations/vercel-ai",
+              "integrations/crewai",
+              "integrations/anthropic",
+              "integrations/gemini",
+              "integrations/llamaindex",
+              "integrations/mastra"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Guides",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "guides/creating-wallets",
+              "guides/spending-policies",
+              "guides/making-payments",
+              "guides/virtual-cards",
+              "guides/agent-to-agent",
+              "guides/compliance-kyc",
+              "guides/webhooks",
+              "guides/testing"
+            ]
+          },
+          {
+            "group": "Blockchain",
+            "pages": [
+              "blockchain/supported-chains",
+              "blockchain/supported-tokens",
+              "blockchain/smart-contracts",
+              "blockchain/gas-optimization"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "security/mpc-architecture",
+              "security/policy-enforcement",
+              "security/threat-model",
+              "security/best-practices"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Overview",
             "pages": [
-              "api-reference/introduction"
+              "api/overview",
+              "api/authentication",
+              "api/errors",
+              "api/rate-limits"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Core Endpoints",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/agents",
+              "api/wallets",
+              "api/payments",
+              "api/policies",
+              "api/groups"
+            ]
+          },
+          {
+            "group": "Advanced Features",
+            "pages": [
+              "api/cards",
+              "api/holds",
+              "api/approvals",
+              "api/compliance",
+              "api/webhooks"
+            ]
+          },
+          {
+            "group": "Analytics",
+            "pages": [
+              "api/spending-analytics",
+              "api/transactions",
+              "api/ledger"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "SDKs",
+        "groups": [
+          {
+            "group": "Official SDKs",
+            "pages": [
+              "sdks/python",
+              "sdks/typescript",
+              "sdks/mcp-server"
+            ]
+          },
+          {
+            "group": "SDK Reference",
+            "pages": [
+              "sdks/python-reference",
+              "sdks/typescript-reference",
+              "sdks/error-handling",
+              "sdks/async-patterns"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Resources",
+        "groups": [
+          {
+            "group": "Additional Resources",
+            "pages": [
+              "resources/examples",
+              "resources/changelog",
+              "resources/faq",
+              "resources/support",
+              "resources/contributing"
+            ]
+          },
+          {
+            "group": "Protocols",
+            "pages": [
+              "resources/protocols/ap2",
+              "resources/protocols/tap",
+              "resources/protocols/ucp",
+              "resources/protocols/a2a"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

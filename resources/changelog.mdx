@@ -1,0 +1,233 @@
+---
+title: 'Changelog'
+description: 'Product updates, new features, and bug fixes'
+icon: 'clock-rotate-left'
+---
+
+## Version 0.2.0 (Current)
+
+**Release Date:** March 3, 2026
+
+### New Features
+
+<AccordionGroup>
+  <Accordion title="Budget Allocation System" icon="chart-pie">
+    Multi-strategy budget allocation for AI agent teams:
+    - **Fixed Allocation** - Assign specific amounts to each agent
+    - **Proportional Allocation** - Distribute based on weights
+    - **Performance-Based** - Allocate based on ROI history
+    - **Rollover** - Carry over unused budget with bonus allocation
+    - Budget utilization tracking and alerts
+    - Auto-rollover to new cycles
+  </Accordion>
+
+  <Accordion title="Alert System" icon="bell">
+    Real-time monitoring and alerting:
+    - Transaction monitoring with configurable thresholds
+    - Policy violation alerts
+    - Budget utilization warnings
+    - Multi-channel delivery (email, Slack, webhook)
+    - Custom alert rules and conditions
+  </Accordion>
+
+  <Accordion title="Enhanced MCP Server" icon="server">
+    Improved Model Context Protocol integration:
+    - Better error handling and validation
+    - Support for multiple wallet management
+    - Enhanced policy verification tools
+    - Spending analytics and reporting
+  </Accordion>
+
+  <Accordion title="Vercel AI SDK Integration" icon="bolt">
+    Native support for Vercel AI SDK:
+    - `@sardis/ai-sdk` package
+    - Seamless integration with `ai` package
+    - TypeScript-first design
+    - Streaming payment status
+  </Accordion>
+
+  <Accordion title="Agent SDK Toolkit" icon="toolbox">
+    Simplified agent integration:
+    - `sardis-agent-sdk` package for Anthropic Claude
+    - Automated agent loop with `run_agent_loop()`
+    - Read-only mode for observer/auditor agents
+    - Tool definition and result parsing handled automatically
+  </Accordion>
+</AccordionGroup>
+
+### Improvements
+
+- **Performance** - 40% faster transaction execution with optimized chain routing
+- **Security** - Enhanced mandate chain verification for AP2 protocol
+- **Documentation** - Complete API reference with interactive examples
+- **Error Messages** - More detailed error messages with troubleshooting hints
+- **Type Safety** - Improved TypeScript types across all SDKs
+
+### Bug Fixes
+
+- Fixed gas estimation for Arc (Circle L1) transactions
+- Resolved wallet balance sync issues on Polygon
+- Fixed EURC token address on Base Sepolia testnet
+- Corrected spending policy evaluation for time-based rules
+- Fixed webhook signature verification edge cases
+
+---
+
+## Version 0.1.0
+
+**Release Date:** January 15, 2026
+
+### Initial Release
+
+<AccordionGroup>
+  <Accordion title="Core Features" icon="star">
+    - **Non-custodial MPC wallets** via Turnkey integration
+    - **Natural language spending policies** with policy firewall
+    - **5 blockchain networks** - Base, Polygon, Ethereum, Arbitrum, Optimism
+    - **Virtual cards** via Lithic integration
+    - **KYC/AML compliance** via Persona and Elliptic
+    - **Append-only audit ledger** for all transactions
+  </Accordion>
+
+  <Accordion title="Protocol Support" icon="shield">
+    - **AP2** (Agent Payment Protocol) - Mandate chain verification
+    - **TAP** (Trust Anchor Protocol) - Ed25519 and ECDSA-P256 identity
+    - **UCP** - Universal Commerce Protocol
+    - **A2A** - Agent-to-Agent escrow mechanics
+  </Accordion>
+
+  <Accordion title="Framework Integrations" icon="puzzle-piece">
+    - **MCP Server** for Claude Desktop and Cursor
+    - **LangChain** integration with `sardis-langchain`
+    - **OpenAI Functions** with `sardis-openai`
+    - **CrewAI** tools with `sardis-crewai`
+    - **Python SDK** with `sardis` package
+    - **TypeScript SDK** with `@sardis/sdk`
+  </Accordion>
+
+  <Accordion title="Supported Tokens" icon="coins">
+    - **USDC** - USD Coin on all chains
+    - **USDT** - Tether on Ethereum, Polygon, Arbitrum, Optimism
+    - **EURC** - Euro Coin on Arc, Base, Polygon, Ethereum
+    - **PYUSD** - PayPal USD on Ethereum
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Migration Guide
+
+### Upgrading from 0.1.x to 0.2.x
+
+<Steps>
+  <Step title="Update Dependencies">
+    ```bash
+    # Python
+    pip install --upgrade sardis
+
+    # TypeScript
+    npm install @sardis/sdk@latest @sardis/mcp-server@latest
+    pnpm install @sardis/sdk@latest @sardis/mcp-server@latest
+    ```
+  </Step>
+
+  <Step title="API Changes">
+    No breaking changes - all 0.1.x code remains compatible.
+
+    **Optional:** Use new features like budget allocation:
+    ```python
+    from sardis_v2_core.budget_allocator import BudgetAllocator, AllocationStrategy
+
+    allocator = BudgetAllocator()
+    cycle = allocator.create_cycle(
+        org_id="your_org",
+        period=BudgetPeriod.MONTHLY,
+        total_budget=Decimal("10000"),
+        strategy=AllocationStrategy.PROPORTIONAL,
+        agent_configs=agents,
+    )
+    ```
+  </Step>
+
+  <Step title="Environment Variables">
+    No new required environment variables. Existing configuration remains unchanged.
+
+    **Optional:** Add alert configuration:
+    ```bash
+    SARDIS_ALERT_WEBHOOK_URL="https://your-webhook.com"
+    SARDIS_SLACK_WEBHOOK_URL="https://hooks.slack.com/..."
+    ```
+  </Step>
+
+  <Step title="Test Your Integration">
+    Run your test suite to verify compatibility:
+    ```bash
+    # Python
+    uv run pytest tests/
+
+    # TypeScript
+    pnpm test
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Upcoming Features
+
+<Info>
+  These features are in development and will be released in future versions. Follow our [GitHub](https://github.com/EfeDurmaz16/sardis) for updates.
+</Info>
+
+### v0.3.0 (Q2 2026)
+
+- **Multi-signature wallets** - Require multiple approvals for high-value transactions
+- **Advanced fraud detection** - ML-powered anomaly detection
+- **Mobile SDK** - React Native integration for mobile agents
+- **Staking rewards** - Earn yield on idle wallet balances
+- **Cross-chain swaps** - Automatic token swapping across chains
+- **Gas abstraction** - Pay gas fees in stablecoins
+
+### v0.4.0 (Q3 2026)
+
+- **Fiat on-ramps** - Direct bank transfers to wallets
+- **Recurring payments** - Subscription management for agents
+- **Invoice generation** - Automated invoicing for A2A transactions
+- **Tax reporting** - Export transaction data for tax filing
+- **Agent reputation system** - On-chain trust scoring
+- **Governance tokens** - Community-driven protocol decisions
+
+---
+
+## Release Notes Archive
+
+<CardGroup cols={2}>
+  <Card title="v0.2.0 Release Notes" icon="file-lines" href="https://github.com/EfeDurmaz16/sardis/releases/tag/v0.2.0">
+    Full release notes on GitHub
+  </Card>
+  <Card title="v0.1.0 Release Notes" icon="file-lines" href="https://github.com/EfeDurmaz16/sardis/releases/tag/v0.1.0">
+    Initial release announcement
+  </Card>
+  <Card title="Roadmap" icon="map" href="https://github.com/EfeDurmaz16/sardis/blob/main/sardis_roadmap.csv">
+    View our public roadmap
+  </Card>
+  <Card title="GitHub Releases" icon="github" href="https://github.com/EfeDurmaz16/sardis/releases">
+    All releases and changelogs
+  </Card>
+</CardGroup>
+
+---
+
+## Stay Updated
+
+<CardGroup cols={3}>
+  <Card title="Discord" icon="discord" href="https://discord.gg/XMA9JwDJ">
+    Get notified of new releases
+  </Card>
+  <Card title="GitHub Watch" icon="github" href="https://github.com/EfeDurmaz16/sardis">
+    Watch for releases
+  </Card>
+  <Card title="Twitter" icon="twitter" href="https://twitter.com/sardis_sh">
+    Follow for announcements
+  </Card>
+</CardGroup>

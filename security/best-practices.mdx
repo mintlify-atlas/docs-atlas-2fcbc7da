@@ -1,0 +1,694 @@
+---
+title: 'Security Best Practices'
+description: 'API key management, policy configuration, webhook security, and monitoring'
+icon: 'list-check'
+---
+
+## Overview
+
+This guide covers operational security best practices for deploying Sardis in production. Follow these recommendations to harden your infrastructure, protect credentials, and maintain secure AI agent payment operations.
+
+## API Key Management
+
+### Never Commit Secrets to Git
+
+<Warning>
+The #1 cause of credential leaks is committing secrets to git. **ALWAYS** use environment variables or secrets managers.
+</Warning>
+
+**Verify `.env` is in `.gitignore`:**
+
+```bash
+grep -q "^\.env$" .gitignore || echo ".env" >> .gitignore
+```
+
+**Check git history for leaked secrets:**
+
+```bash
+git log -p | grep -E "SARDIS_API_KEY|TURNKEY_API_KEY|CIRCLE_API_KEY"
+```
+
+If secrets are found, **rotate immediately** and use [BFG Repo-Cleaner](https://rtyley.github.io/bfg-repo-cleaner/) to remove them from history.
+
+### Use Secrets Managers
+
+**AWS Secrets Manager** (Recommended for Production):
+
+```python
+import boto3
+import json
+
+def get_secret(secret_name: str) -> dict:
+    client = boto3.client("secretsmanager", region_name="us-east-1")
+    response = client.get_secret_value(SecretId=secret_name)
+    return json.loads(response["SecretString"])
+
+secrets = get_secret("sardis/production/api-keys")
+settings = SardisSettings(
+    api_key=secrets["SARDIS_API_KEY"],
+    turnkey_api_key=secrets["TURNKEY_API_KEY"],
+    turnkey_api_private_key=secrets["TURNKEY_API_PRIVATE_KEY"],
+    turnkey_organization_id=secrets["TURNKEY_ORGANIZATION_ID"],
+)
+```
+
+**HashiCorp Vault**:
+
+```bash
+export VAULT_ADDR="https://vault.example.com"
+export VAULT_TOKEN="s.abc123..."
+
+# Store secrets
+vault kv put secret/sardis/api-keys \
+  SARDIS_API_KEY="sk_live_..." \
+  TURNKEY_API_KEY="..." \
+  TURNKEY_API_PRIVATE_KEY="..."
+
+# Retrieve secrets
+vault kv get -format=json secret/sardis/api-keys
+```
+
+**Doppler** (Developer-Friendly):
+
+```bash
+# Install Doppler CLI
+brew install dopplerhq/cli/doppler
+
+# Authenticate
+doppler login
+
+# Set secrets
+doppler secrets set SARDIS_API_KEY="sk_live_..."
+
+# Run app with injected secrets
+doppler run -- python main.py
+```
+
+### Rotate API Keys Every 90 Days
+
+**Automated Rotation Script**:
+
+```python
+import os
+import hashlib
+import secrets
+from datetime import datetime, timezone
+
+def rotate_api_key(agent_id: str) -> str:
+    """Generate a new API key and update it in the secrets manager."""
+    # Generate new key
+    new_key = f"sk_live_{secrets.token_urlsafe(32)}"
+    key_hash = hashlib.sha256(new_key.encode()).hexdigest()
+    
+    # Store in database
+    await db.execute(
+        """
+        INSERT INTO api_keys (agent_id, key_hash, created_at, expires_at)
+        VALUES ($1, $2, $3, $4)
+        """,
+        agent_id,
+        key_hash,
+        datetime.now(timezone.utc),
+        datetime.now(timezone.utc) + timedelta(days=90),
+    )
+    
+    # Update secrets manager
+    update_secret(f"sardis/agents/{agent_id}/api_key", new_key)
+    
+    # Revoke old key (with 24-hour grace period)
+    await db.execute(
+        """
+        UPDATE api_keys
+        SET revoked_at = $1
+        WHERE agent_id = $2 AND key_hash != $3
+        """,
+        datetime.now(timezone.utc) + timedelta(hours=24),
+        agent_id,
+        key_hash,
+    )
+    
+    return new_key
+```
+
+**Set up a cron job:**
+
+```bash
+# Rotate all API keys every 90 days
+0 0 1 */3 * /usr/bin/python3 /opt/sardis/scripts/rotate_api_keys.py
+```
+
+### Scope API Keys to Specific Agents
+
+**Generate scoped API keys:**
+
+```python
+from sardis import Sardis
+
+sardis = Sardis(api_key=os.getenv("SARDIS_ADMIN_API_KEY"))
+
+# Create agent-specific API key
+api_key = await sardis.api_keys.create(
+    agent_id="agent_001",
+    scopes=["payments:create", "policies:read"],
+    rate_limit=100,  # 100 requests per minute
+    ip_allowlist=["203.0.113.0/24"],
+)
+
+print(f"API Key: {api_key.key}")
+print(f"Scopes: {api_key.scopes}")
+```
+
+### Enable IP Allowlisting
+
+**Turnkey**: Configure in the [Turnkey Dashboard](https://app.turnkey.com)
+
+**Circle**: Set IP allowlist in your [Circle Developer Console](https://console.circle.com)
+
+**Sardis API**: Use middleware to enforce IP restrictions
+
+```python
+from fastapi import Request, HTTPException
+
+ALLOWED_IPS = {"203.0.113.0/24", "198.51.100.0/24"}
+
+@app.middleware("http")
+async def ip_allowlist_middleware(request: Request, call_next):
+    client_ip = request.client.host
+    if not is_ip_allowed(client_ip, ALLOWED_IPS):
+        raise HTTPException(403, "IP not allowlisted")
+    return await call_next(request)
+```
+
+## Policy Configuration
+
+### Start with Low Trust
+
+**Default to LOW trust** for all new agents:
+
+```python
+from sardis_v2_core import create_default_policy, TrustLevel
+
+policy = create_default_policy(
+    agent_id="agent_new_001",
+    trust_level=TrustLevel.LOW,  # $50/tx, $100/day
+)
+```
+
+**Upgrade to MEDIUM/HIGH** only after the agent proves reliable:
+
+```python
+# After 30 days of good behavior
+if agent.days_active > 30 and agent.policy_violations == 0:
+    policy.trust_level = TrustLevel.MEDIUM
+    policy.limit_per_tx = Decimal("500.00")
+    policy.daily_limit.limit_amount = Decimal("1000.00")
+    await policy_store.set_policy(agent.id, policy)
+```
+
+### Use Scope Restrictions
+
+**Restrict spending to specific categories:**
+
+```python
+from sardis_v2_core import SpendingScope
+
+# Cloud-only agent
+policy.allowed_scopes = [SpendingScope.COMPUTE]
+
+# Retail-only agent
+policy.allowed_scopes = [SpendingScope.RETAIL]
+
+# No restrictions
+policy.allowed_scopes = [SpendingScope.ALL]
+```
+
+### Configure Merchant Allowlists
+
+**Allow only known-good merchants:**
+
+```python
+# Allow specific cloud providers
+policy.add_merchant_allow(
+    merchant_id="aws.amazon.com",
+    max_per_tx=Decimal("1000.00"),
+)
+policy.add_merchant_allow(
+    merchant_id="cloud.google.com",
+    max_per_tx=Decimal("1000.00"),
+)
+
+# Allow specific categories
+policy.add_merchant_allow(
+    category="cloud",
+    max_per_tx=Decimal("500.00"),
+)
+```
+
+**Block high-risk categories:**
+
+```python
+policy.block_merchant_category("gambling")
+policy.block_merchant_category("alcohol")
+policy.block_merchant_category("tobacco")
+policy.block_merchant_category("adult")
+```
+
+### Set Up Approval Thresholds
+
+**Require human approval for large transactions:**
+
+```python
+policy.approval_threshold = Decimal("5000.00")  # >$5k needs approval
+
+# Evaluation returns (True, "requires_approval")
+ok, reason = await policy.evaluate(
+    wallet=wallet,
+    amount=Decimal("10000.00"),  # >$5k
+    fee=Decimal("0.01"),
+    chain="base",
+    token=TokenType.USDC,
+)
+if reason == "requires_approval":
+    # Route to human for sign-off
+    await send_approval_request(agent_id, amount, merchant_id)
+```
+
+### Monitor Policy Denials
+
+**Alert on high denial rates:**
+
+```python
+from sardis_wallet import AuditLogger, AuditAction
+
+audit_logger = AuditLogger()
+denials = await audit_logger.query(AuditQuery(
+    action=AuditAction.TRANSACTION_DENIED,
+    start_time=datetime.now(timezone.utc) - timedelta(hours=1),
+))
+
+if len(denials) > 50:
+    alert("High policy denial rate detected", severity="high")
+```
+
+## Webhook Security
+
+### Verify HMAC Signatures
+
+**Sardis webhooks** include an `X-Sardis-Signature` header:
+
+```python
+import hmac
+import hashlib
+from fastapi import Request, HTTPException
+
+WEBHOOK_SECRET = os.getenv("SARDIS_WEBHOOK_SECRET")
+
+@app.post("/webhooks/sardis")
+async def sardis_webhook(request: Request):
+    # Get signature from header
+    signature = request.headers.get("X-Sardis-Signature")
+    if not signature:
+        raise HTTPException(401, "Missing signature")
+    
+    # Compute expected signature
+    body = await request.body()
+    expected_signature = hmac.new(
+        WEBHOOK_SECRET.encode(),
+        body,
+        hashlib.sha256,
+    ).hexdigest()
+    
+    # Constant-time comparison
+    if not hmac.compare_digest(signature, expected_signature):
+        raise HTTPException(401, "Invalid signature")
+    
+    # Process webhook
+    payload = await request.json()
+    await handle_webhook(payload)
+    return {"status": "ok"}
+```
+
+### Implement Replay Protection
+
+**Check timestamp to prevent replay attacks:**
+
+```python
+@app.post("/webhooks/sardis")
+async def sardis_webhook(request: Request):
+    payload = await request.json()
+    
+    # Check timestamp (reject if >5 minutes old)
+    timestamp = payload.get("timestamp")
+    if not timestamp:
+        raise HTTPException(400, "Missing timestamp")
+    
+    webhook_time = datetime.fromisoformat(timestamp)
+    age = datetime.now(timezone.utc) - webhook_time
+    if age > timedelta(minutes=5):
+        raise HTTPException(400, "Webhook too old (replay attack?)")
+    
+    # Verify signature...
+```
+
+### Use Webhook Secrets Rotation
+
+**Rotate webhook secrets every 90 days:**
+
+```bash
+# Generate new webhook secret
+NEW_SECRET=$(openssl rand -hex 32)
+
+# Update in Sardis dashboard
+curl -X POST https://api.sardis.sh/v2/webhooks/secrets \
+  -H "Authorization: Bearer $SARDIS_API_KEY" \
+  -d '{"secret": "'$NEW_SECRET'", "rotate_at": "2026-06-01T00:00:00Z"}'
+
+# Update in your secrets manager
+aws secretsmanager update-secret \
+  --secret-id sardis/webhook-secret \
+  --secret-string "$NEW_SECRET"
+```
+
+## Monitoring and Alerts
+
+### Set Up CloudWatch Alarms (AWS)
+
+```python
+import boto3
+
+cloudwatch = boto3.client("cloudwatch")
+
+# Alert on high policy denial rate
+cloudwatch.put_metric_alarm(
+    AlarmName="SardisPolicyDenialRateHigh",
+    MetricName="PolicyDenials",
+    Namespace="Sardis",
+    Statistic="Sum",
+    Period=300,  # 5 minutes
+    EvaluationPeriods=1,
+    Threshold=50,
+    ComparisonOperator="GreaterThanThreshold",
+    AlarmActions=["arn:aws:sns:us-east-1:123456789012:sardis-alerts"],
+)
+
+# Alert on failed MPC signing
+cloudwatch.put_metric_alarm(
+    AlarmName="SardisMPCSigningFailures",
+    MetricName="MPCSigningErrors",
+    Namespace="Sardis",
+    Statistic="Sum",
+    Period=60,
+    EvaluationPeriods=1,
+    Threshold=5,
+    ComparisonOperator="GreaterThanThreshold",
+    AlarmActions=["arn:aws:sns:us-east-1:123456789012:sardis-critical"],
+)
+```
+
+### Set Up Datadog Monitors
+
+```python
+from datadog_api_client import ApiClient, Configuration
+from datadog_api_client.v1.api.monitors_api import MonitorsApi
+from datadog_api_client.v1.model.monitor import Monitor
+
+configuration = Configuration()
+with ApiClient(configuration) as api_client:
+    api_instance = MonitorsApi(api_client)
+    
+    # Alert on high API error rate
+    monitor = Monitor(
+        name="Sardis API Error Rate",
+        type="metric alert",
+        query="avg(last_5m):sum:sardis.api.errors{env:production} > 50",
+        message="Sardis API error rate is high @slack-sardis-alerts",
+    )
+    api_instance.create_monitor(body=monitor)
+```
+
+### Log Critical Events
+
+**Always log these events:**
+
+```python
+from sardis_wallet import AuditLogger, AuditCategory, AuditAction, AuditLevel
+
+audit_logger = AuditLogger()
+
+# Key rotation
+await audit_logger.log(
+    wallet_id=wallet.wallet_id,
+    category=AuditCategory.KEY_MANAGEMENT,
+    action=AuditAction.KEY_ROTATED,
+    level=AuditLevel.SECURITY,
+    actor_id="system",
+    details={"reason": "scheduled"},
+)
+
+# Policy violation
+await audit_logger.log(
+    wallet_id=wallet.wallet_id,
+    category=AuditCategory.POLICY,
+    action=AuditAction.TRANSACTION_DENIED,
+    level=AuditLevel.WARNING,
+    actor_id=agent_id,
+    details={"reason": "per_transaction_limit", "amount": str(amount)},
+)
+
+# Security event
+await audit_logger.log_security_event(
+    wallet_id=wallet.wallet_id,
+    action=AuditAction.KEY_ROTATED,
+    threat_level="high",
+    actor_id="security_team",
+    details={"emergency": True, "reason": "potential_compromise"},
+)
+```
+
+### Set Up Alerting Rules
+
+```python
+# Alert on policy denial rate >50%
+if policy_denial_rate > 0.5:
+    alert(
+        title="High Policy Denial Rate",
+        severity="high",
+        message=f"Agent {agent_id} has {policy_denial_rate:.1%} denial rate",
+    )
+
+# Alert on velocity limit hits
+if velocity_limit_hits > 5:
+    alert(
+        title="Agent Hitting Velocity Limits",
+        severity="medium",
+        message=f"Agent {agent_id} hit velocity limit {velocity_limit_hits} times in 1 hour",
+    )
+
+# Alert on failed authentication
+if failed_auth_attempts > 10:
+    alert(
+        title="Potential Credential Stuffing Attack",
+        severity="critical",
+        message=f"{failed_auth_attempts} failed auth attempts in 1 minute",
+    )
+
+# Alert on unusual MPC signing activity
+if signing_requests > 100:
+    alert(
+        title="Unusual MPC Signing Activity",
+        severity="critical",
+        message=f"{signing_requests} signing requests per minute (normal: <10)",
+    )
+```
+
+## Database Security
+
+### Enable Encryption at Rest
+
+**Neon (Postgres)**: Enabled by default
+
+**AWS RDS**:
+```bash
+aws rds modify-db-instance \
+  --db-instance-identifier sardis-production \
+  --storage-encrypted \
+  --kms-key-id arn:aws:kms:us-east-1:123456789012:key/abc123... \
+  --apply-immediately
+```
+
+### Restrict Database Access
+
+**Security group rules (AWS)**:
+
+```bash
+aws ec2 authorize-security-group-ingress \
+  --group-id sg-abc123 \
+  --protocol tcp \
+  --port 5432 \
+  --source-group sg-def456  # Only allow from app servers
+```
+
+**Neon IP Allowlist**:
+
+Configure in [Neon Console](https://console.neon.tech) → Project Settings → IP Allow
+
+### Use Connection Pooling
+
+```python
+from asyncpg import create_pool
+
+pool = await create_pool(
+    dsn=os.getenv("DATABASE_URL"),
+    min_size=10,
+    max_size=50,
+    max_inactive_connection_lifetime=300,
+)
+```
+
+## Infrastructure Hardening
+
+### Deploy a Web Application Firewall (WAF)
+
+**AWS WAF** (Recommended):
+
+```bash
+aws wafv2 create-web-acl \
+  --name sardis-production \
+  --scope REGIONAL \
+  --default-action Block={} \
+  --rules file://waf-rules.json
+```
+
+**Cloudflare** (Alternative):
+
+Enable Cloudflare in front of your API—provides DDoS protection, rate limiting, and bot detection.
+
+### Enable HTTPS with TLS 1.3
+
+```python
+import uvicorn
+
+uvicorn.run(
+    "main:app",
+    host="0.0.0.0",
+    port=8000,
+    ssl_keyfile="/etc/ssl/private/sardis.key",
+    ssl_certfile="/etc/ssl/certs/sardis.crt",
+    ssl_version=ssl.PROTOCOL_TLS_SERVER,  # TLS 1.3
+)
+```
+
+### Add Security Headers
+
+```python
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Content-Security-Policy"] = "default-src 'self'"
+    return response
+```
+
+### Enable CORS Properly
+
+```python
+from starlette.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://dashboard.sardis.sh"],  # Specific origins only
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["*"],
+    max_age=3600,
+)
+```
+
+## Incident Response
+
+### Credential Compromise
+
+<Steps>
+  <Step title="Revoke Immediately">
+    Revoke the compromised API key in the Sardis dashboard
+  </Step>
+  <Step title="Rotate All Related Credentials">
+    Rotate MPC provider credentials, database passwords, and webhook secrets
+  </Step>
+  <Step title="Audit Recent Activity">
+    Query audit logs for all actions performed with the compromised key
+  </Step>
+  <Step title="Notify Affected Parties">
+    If funds were lost, notify affected agents and initiate recovery
+  </Step>
+  <Step title="Post-Mortem">
+    Document the incident and update security procedures
+  </Step>
+</Steps>
+
+### Suspicious Agent Activity
+
+<Steps>
+  <Step title="Freeze Wallet">
+    ```python
+    wallet.is_frozen = True
+    wallet.freeze_reason = "suspicious_activity"
+    wallet.frozen_by = "security_team"
+    await wallet_manager.update_wallet(wallet)
+    ```
+  </Step>
+  <Step title="Review Transactions">
+    Examine all transactions in the last 24 hours for policy violations
+  </Step>
+  <Step title="Investigate Root Cause">
+    Was the agent compromised? Prompt injection? Model poisoning?
+  </Step>
+  <Step title="Unfreeze or Terminate">
+    If resolved, unfreeze wallet. If compromised, terminate agent.
+  </Step>
+</Steps>
+
+## Compliance Checklist
+
+<AccordionGroup>
+  <Accordion title="SOC 2 Type II">
+    - [ ] Access controls (RBAC) implemented
+    - [ ] Audit logging for all critical actions
+    - [ ] Encryption at rest and in transit
+    - [ ] Regular vulnerability scans
+    - [ ] Incident response plan documented
+    - [ ] Annual penetration testing
+    - [ ] Employee security training
+  </Accordion>
+  
+  <Accordion title="PCI DSS (if handling card data)">
+    - [ ] Card data tokenized via Lithic
+    - [ ] No plaintext card storage
+    - [ ] Regular vulnerability scans
+    - [ ] Firewall rules documented
+    - [ ] Quarterly compliance reviews
+  </Accordion>
+  
+  <Accordion title="GDPR (if EU users)">
+    - [ ] Data export endpoint
+    - [ ] Data deletion endpoint
+    - [ ] Consent management system
+    - [ ] Data processing agreements
+    - [ ] Privacy policy published
+    - [ ] Data breach notification procedure
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Threat Model" icon="triangle-exclamation" href="/security/threat-model">
+    Understand attack surfaces and mitigation strategies
+  </Card>
+  <Card title="MPC Architecture" icon="shield-halved" href="/security/mpc-architecture">
+    Learn how non-custodial key management works
+  </Card>
+</CardGroup>

@@ -1,0 +1,173 @@
+---
+title: 'Payments'
+description: 'Execute and track stablecoin payments'
+---
+
+## Overview
+
+Payments in Sardis are stablecoin transfers that undergo policy enforcement, compliance checks, and are recorded in an immutable ledger.
+
+All payments are executed via the [Wallets Transfer endpoint](/api/wallets#transfer-crypto).
+
+## Payment Flow
+
+1. **Policy Check** - Agent policy validation
+2. **Compliance** - KYC/AML screening
+3. **Execution** - On-chain transaction
+4. **Ledger** - Append-only record
+5. **Webhook** - Event notification
+
+## SDK Methods
+
+### Python
+
+```python
+from sardis_sdk import SardisClient
+
+client = SardisClient(api_key="sk_live_your_api_key")
+
+# Simple payment
+result = client.payments.send(
+    wallet_id="wallet_abc123",
+    to="0xRecipient...",
+    amount="25.00",
+    token="USDC",
+    memo="API subscription payment"
+)
+
+print(f"Status: {result.status}")
+print(f"TX Hash: {result.tx_hash}")
+```
+
+### TypeScript
+
+```typescript
+import { SardisClient } from '@sardis/sdk';
+
+const client = new SardisClient({ apiKey: 'sk_live_your_api_key' });
+
+const result = await client.payments.send({
+  walletId: 'wallet_abc123',
+  to: '0xRecipient...',
+  amount: '25.00',
+  token: 'USDC',
+  memo: 'API subscription payment'
+});
+
+console.log(`Status: ${result.status}`);
+console.log(`TX Hash: ${result.txHash}`);
+```
+
+## Payment States
+
+| State | Description |
+|-------|-------------|
+| `pending` | Payment initiated, awaiting confirmation |
+| `submitted` | Transaction submitted to blockchain |
+| `confirmed` | Transaction confirmed on-chain |
+| `completed` | Payment finalized in ledger |
+| `failed` | Payment failed (policy, compliance, or chain error) |
+
+## Idempotency
+
+All payment endpoints support idempotency keys:
+
+```bash
+curl -X POST https://api.sardis.sh/api/v2/wallets/wallet_abc123/transfer \
+  -H "Authorization: Bearer sk_live_your_api_key" \
+  -H "Idempotency-Key: payment-xyz-123" \
+  -H "Content-Type: application/json" \
+  -d '{"destination": "0x...", "amount": "50.00"}'
+```
+
+If you retry with the same key within 24 hours, you'll receive the original response.
+
+## Agent-to-Agent Payments
+
+Transfer funds between two agent wallets:
+
+```python
+# Transfer from agent A to agent B
+client.payments.send(
+    wallet_id=agent_a_wallet_id,
+    to=agent_b_address,  # Agent B's wallet address
+    amount="100.00",
+    token="USDC",
+    chain="base"
+)
+```
+
+## Batch Payments
+
+Send payments to multiple recipients:
+
+```python
+from sardis_sdk import SardisClient
+
+client = SardisClient(api_key="sk_live_your_api_key")
+
+batch = client.payments.batch_transfer(
+    wallet_id="wallet_abc123",
+    chain="base",
+    token="USDC",
+    transfers=[
+        {"destination": "0xRecipient1...", "amount": "10.00"},
+        {"destination": "0xRecipient2...", "amount": "20.00"},
+        {"destination": "0xRecipient3...", "amount": "30.00"}
+    ]
+)
+
+print(f"Successful: {batch.successful}/{batch.total_transfers}")
+```
+
+## Platform Fees
+
+Sardis charges a small fee on payments (configurable, default 1%):
+
+```json
+{
+  "amount": "100.00",
+  "fee_amount": "1.00",
+  "fee_bps": 100,
+  "net_amount": "99.00"
+}
+```
+
+Treasury addresses and internal transfers are fee-exempt.
+
+## Common Errors
+
+See [Errors](/api/errors) for complete error handling.
+
+### Insufficient Balance
+
+```json
+{
+  "error": {
+    "code": "insufficient_balance",
+    "message": "Wallet balance too low"
+  }
+}
+```
+
+### Policy Denied
+
+```json
+{
+  "error": {
+    "code": "policy_denied",
+    "message": "Transaction exceeds daily spending limit"
+  }
+}
+```
+
+### Compliance Failed
+
+```json
+{
+  "error": {
+    "code": "compliance_check_failed",
+    "message": "Transaction blocked by compliance screening"
+  }
+}
+```

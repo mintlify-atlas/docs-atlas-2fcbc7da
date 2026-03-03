@@ -1,0 +1,764 @@
+---
+title: Testing
+description: Test your Sardis integration in sandbox mode
+---
+
+Sardis provides comprehensive testing capabilities including sandbox mode, test credentials, simulation mode, and example test cases to help you build with confidence before going to production.
+
+## Sandbox Mode
+
+Sardis has two environments:
+
+- **Sandbox**: For development and testing (uses testnets)
+- **Production**: For real transactions (uses mainnets)
+
+<Steps>
+  <Step title="Get Sandbox API Key">
+    Sign up at [dashboard.sardis.sh](https://dashboard.sardis.sh) and create a sandbox API key:
+    
+    ```python
+    # Sandbox keys start with "sk_sandbox_"
+    api_key = "sk_sandbox_..."
+    ```
+  </Step>
+
+  <Step title="Configure Sandbox Environment">
+    ```python
+    from sardis import SardisClient
+    
+    client = SardisClient(
+        api_key="sk_sandbox_...",
+        environment="sandbox"  # Uses testnets
+    )
+    
+    # Create wallet on testnet
+    wallet = client.wallets.create(
+        name="test-wallet",
+        chain="base_sepolia",  # Testnet
+        policy="Max $1000/day"
+    )
+    
+    print(f"Testnet wallet: {wallet.address}")
+    ```
+  </Step>
+
+  <Step title="Get Test Funds">
+    Fund your testnet wallet with test tokens:
+    
+    ```python
+    # Get testnet USDC from faucet
+    print(f"Get testnet USDC at:")
+    print(f"https://faucet.circle.com/")
+    print(f"Send to: {wallet.address}")
+    
+    # Or use Sardis test funding
+    client.testing.fund_wallet(
+        wallet_id=wallet.wallet_id,
+        amount=1000.00,
+        token="USDC"
+    )
+    
+    print(f"Balance: ${wallet.get_balance(token='USDC')}")
+    ```
+  </Step>
+</Steps>
+
+## Simulation Mode
+
+For rapid prototyping without any API calls:
+
+```python
+from sardis import Wallet, Transaction, Policy
+
+# Create simulated wallet (no API key needed)
+wallet = Wallet(initial_balance=1000, currency="USDC")
+print(f"Wallet ID: {wallet.wallet_id}")
+print(f"Balance: ${wallet.balance}")
+
+# Create policy
+policy = Policy(
+    max_per_tx=100,
+    max_total=500,
+    allowed_merchants=["openai.com", "anthropic.com"]
+)
+
+# Execute simulated transaction
+tx = Transaction(
+    from_wallet=wallet,
+    to="openai.com",
+    amount=25,
+    policy=policy
+)
+
+result = tx.execute()
+print(f"Status: {result.status}")  # executed
+print(f"TX Hash: {result.tx_hash}")  # simulated hash
+print(f"New balance: ${wallet.balance}")  # 975
+```
+
+**Simulation mode features:**
+- No API key required
+- Instant execution (no blockchain delays)
+- Perfect for unit tests
+- Policy enforcement works the same
+- No rate limits
+
+## Test Credentials
+
+### Sandbox API Keys
+
+```bash
+# Get sandbox API key from dashboard
+export SARDIS_API_KEY="sk_sandbox_..."
+
+# Or pass directly
+from sardis import SardisClient
+client = SardisClient(api_key="sk_sandbox_...")
+```
+
+### Test Chains
+
+| Chain | Network | Explorer |
+|-------|---------|----------|
+| Base | Sepolia Testnet | [basescan.org/sepolia](https://sepolia.basescan.org/) |
+| Ethereum | Sepolia | [sepolia.etherscan.io](https://sepolia.etherscan.io/) |
+| Polygon | Amoy Testnet | [amoy.polygonscan.com](https://amoy.polygonscan.com/) |
+
+### Test Tokens
+
+```python
+# Get test USDC for different chains
+faucets = {
+    "base_sepolia": "https://faucet.circle.com/",
+    "ethereum_sepolia": "https://faucet.circle.com/",
+    "polygon_amoy": "https://faucet.polygon.technology/"
+}
+
+# Or use Sardis test funding
+client.testing.fund_wallet(
+    wallet_id=wallet.wallet_id,
+    amount=10000.00,  # Test amount
+    token="USDC"
+)
+```
+
+### Test KYC
+
+For testing KYC flows without real identities:
+
+```python
+# Use Persona sandbox environment
+inquiry = client.compliance.kyc.create_inquiry(
+    reference_id="test_agent_123",
+    name_first="Test",
+    name_last="User",
+    email="test@example.com"
+)
+
+# In Persona sandbox, use test data:
+# SSN: 111-11-1111 (auto-approve)
+# SSN: 222-22-2222 (auto-decline)
+# SSN: 333-33-3333 (manual review)
+
+# Simulate approval
+client.testing.approve_kyc(inquiry_id=inquiry.inquiry_id)
+```
+
+### Test Cards
+
+Virtual cards work in sandbox with test merchants:
+
+```python
+card = client.cards.create(
+    wallet_id=wallet.wallet_id,
+    card_type="virtual",
+    spending_limit=1000.00
+)
+
+# Test card numbers (Lithic sandbox)
+test_transactions = [
+    {"amount": 10.00, "merchant": "Test Coffee Shop", "expected": "approved"},
+    {"amount": 5000.00, "merchant": "Test Casino", "expected": "declined"},
+]
+
+for test in test_transactions:
+    # Simulate transaction
+    result = client.testing.simulate_card_transaction(
+        card_id=card.card_id,
+        amount=test["amount"],
+        merchant=test["merchant"]
+    )
+    print(f"{test['merchant']}: {result.status}")
+```
+
+## Example Test Cases
+
+### Test Payment Flow
+
+```python
+import pytest
+from sardis import SardisClient, Policy
+
+@pytest.fixture
+def client():
+    return SardisClient(
+        api_key="sk_sandbox_...",
+        environment="sandbox"
+    )
+
+@pytest.fixture
+def funded_wallet(client):
+    """Create and fund a test wallet."""
+    wallet = client.wallets.create(
+        name="test-wallet",
+        chain="base_sepolia",
+        policy="Max $100/tx, $1000/day"
+    )
+    
+    # Fund with test tokens
+    client.testing.fund_wallet(
+        wallet_id=wallet.wallet_id,
+        amount=1000.00,
+        token="USDC"
+    )
+    
+    return wallet
+
+def test_successful_payment(funded_wallet):
+    """Test a successful payment execution."""
+    result = funded_wallet.pay(
+        to="test-merchant",
+        amount=50.00,
+        token="USDC"
+    )
+    
+    assert result.success
+    assert result.status == "executed"
+    assert result.tx_hash is not None
+    
+    # Check balance decreased
+    new_balance = funded_wallet.get_balance(token="USDC")
+    assert new_balance == 950.00
+
+def test_policy_rejection(funded_wallet):
+    """Test policy blocks transaction over limit."""
+    result = funded_wallet.pay(
+        to="test-merchant",
+        amount=150.00,  # Exceeds per-tx limit of $100
+        token="USDC"
+    )
+    
+    assert not result.success
+    assert result.status == "rejected"
+    assert "per_transaction_limit" in result.message
+
+def test_insufficient_balance(funded_wallet):
+    """Test insufficient balance rejection."""
+    result = funded_wallet.pay(
+        to="test-merchant",
+        amount=2000.00,  # More than balance
+        token="USDC"
+    )
+    
+    assert not result.success
+    assert result.status == "failed"
+    assert "insufficient" in result.message.lower()
+```
+
+### Test Policy Validation
+
+```python
+def test_policy_parsing():
+    """Test natural language policy parsing."""
+    from sardis_v2_core.nl_policy_parser import parse_natural_language_policy
+    
+    policy_text = "Max $100 per transaction, $1000 per day, only allow OpenAI and AWS"
+    policy = parse_natural_language_policy(policy_text)
+    
+    assert policy.per_transaction_limit == 100
+    assert policy.daily_limit == 1000
+    assert "openai.com" in policy.merchant_allowlist
+    assert "aws.amazon.com" in policy.merchant_allowlist
+
+def test_policy_enforcement():
+    """Test policy check logic."""
+    from sardis import Wallet, Policy
+    from decimal import Decimal
+    
+    wallet = Wallet(initial_balance=1000)
+    policy = Policy(
+        max_per_tx=100,
+        blocked_merchants=["gambling.com"]
+    )
+    
+    # Valid payment
+    result = policy.check(amount=Decimal("50"), wallet=wallet, destination="openai.com")
+    assert result.approved
+    
+    # Exceeds limit
+    result = policy.check(amount=Decimal("150"), wallet=wallet, destination="openai.com")
+    assert not result.approved
+    assert "per_transaction_limit" in result.reason
+    
+    # Blocked merchant
+    result = policy.check(amount=Decimal("50"), wallet=wallet, destination="gambling.com")
+    assert not result.approved
+    assert "merchant_blocked" in result.reason
+```
+
+### Test Webhook Handling
+
+```python
+import hmac
+import hashlib
+import json
+
+def test_webhook_signature_verification():
+    """Test webhook signature verification."""
+    secret = "whsec_test123"
+    payload = json.dumps({"type": "payment.completed", "data": {}}).encode()
+    
+    # Generate signature
+    signature = hmac.new(
+        secret.encode('utf-8'),
+        payload,
+        hashlib.sha256
+    ).hexdigest()
+    
+    # Verify
+    expected = hmac.new(
+        secret.encode('utf-8'),
+        payload,
+        hashlib.sha256
+    ).hexdigest()
+    
+    assert hmac.compare_digest(signature, expected)
+
+def test_webhook_event_processing(client):
+    """Test processing webhook events."""
+    events = [
+        {"type": "payment.completed", "data": {"tx_id": "tx_123"}},
+        {"type": "policy.violation", "data": {"reason": "limit_exceeded"}},
+        {"type": "wallet.created", "data": {"wallet_id": "wallet_456"}},
+    ]
+    
+    for event in events:
+        # Send test webhook
+        response = client.webhooks.send_test(
+            subscription_id="sub_test",
+            event_type=event["type"],
+            data=event["data"]
+        )
+        assert response.status_code == 200
+```
+
+### Test Compliance
+
+```python
+@pytest.mark.asyncio
+async def test_kyc_flow(client):
+    """Test KYC verification flow."""
+    # Create inquiry
+    inquiry = await client.compliance.kyc.create_inquiry(
+        reference_id="test_agent",
+        name_first="Alice",
+        name_last="Test",
+        email="alice@test.com"
+    )
+    
+    assert inquiry.inquiry_id
+    assert inquiry.status == "pending"
+    
+    # Simulate approval (sandbox)
+    await client.testing.approve_kyc(inquiry_id=inquiry.inquiry_id)
+    
+    # Check status
+    result = await client.compliance.kyc.get_status(inquiry_id=inquiry.inquiry_id)
+    assert result.status == "approved"
+    assert result.is_verified
+
+@pytest.mark.asyncio
+async def test_sanctions_screening(client):
+    """Test sanctions screening."""
+    # Screen clean address
+    result = await client.compliance.sanctions.screen_wallet(
+        address="0x0000000000000000000000000000000000000001",
+        chain="ethereum"
+    )
+    assert result.risk_level == "low"
+    assert not result.is_sanctioned
+    
+    # Screen sanctioned address (test address)
+    result = await client.compliance.sanctions.screen_wallet(
+        address="0x7F367cC41522cE07553e823bf3be79A889DEbe1B",  # Tornado Cash
+        chain="ethereum"
+    )
+    assert result.is_sanctioned
+    assert result.should_block
+```
+
+### Test Agent-to-Agent
+
+```python
+def test_agent_to_agent_payment():
+    """Test agent-to-agent transaction."""
+    from sardis import Agent, Policy
+    
+    # Create two agents
+    alice = Agent(
+        name="Alice",
+        policy=Policy(max_per_tx=100, max_total=500)
+    )
+    alice.create_wallet(initial_balance=200)
+    
+    bob = Agent(
+        name="Bob",
+        policy=Policy(max_per_tx=500, max_total=5000)
+    )
+    bob.create_wallet(initial_balance=50)
+    
+    # Alice pays Bob
+    result = alice.pay(
+        to=bob.agent_id,
+        amount=25,
+        purpose="Data analysis service"
+    )
+    
+    assert result.success
+    assert alice.total_balance == 175
+    
+    # Bob receives funds
+    bob.primary_wallet.deposit(25)
+    assert bob.total_balance == 75
+```
+
+## Load Testing
+
+Test scalability and performance:
+
+```python
+import asyncio
+from sardis import AsyncSardisClient
+
+async def load_test(num_requests: int = 100):
+    """Execute multiple payments concurrently."""
+    client = AsyncSardisClient(api_key="sk_sandbox_...")
+    
+    wallet = await client.wallets.get(wallet_id="wallet_test")
+    
+    async def make_payment(i: int):
+        result = await wallet.pay(
+            to=f"merchant-{i}",
+            amount=10.00,
+            token="USDC",
+            idempotency_key=f"load-test-{i}"
+        )
+        return result.success
+    
+    # Execute payments concurrently
+    tasks = [make_payment(i) for i in range(num_requests)]
+    results = await asyncio.gather(*tasks)
+    
+    success_count = sum(results)
+    print(f"Completed: {success_count}/{num_requests}")
+    print(f"Success rate: {success_count/num_requests*100:.1f}%")
+
+# Run load test
+asyncio.run(load_test(num_requests=100))
+```
+
+## Testing Best Practices
+
+### 1. Use Separate Test Wallets
+
+```python
+@pytest.fixture(scope="function")
+def test_wallet(client):
+    """Create fresh wallet for each test."""
+    wallet = client.wallets.create(
+        name=f"test-{uuid.uuid4()}",
+        chain="base_sepolia",
+        policy="Max $1000/day"
+    )
+    
+    # Fund wallet
+    client.testing.fund_wallet(wallet_id=wallet.wallet_id, amount=1000.00)
+    
+    yield wallet
+    
+    # Cleanup (optional)
+    client.wallets.delete(wallet_id=wallet.wallet_id)
+```
+
+### 2. Mock External Services
+
+```python
+from unittest.mock import patch, MagicMock
+
+def test_payment_with_mocked_blockchain():
+    """Test payment with mocked blockchain calls."""
+    with patch('sardis_v2_chain.executor.ChainExecutor.execute_transaction') as mock_exec:
+        mock_exec.return_value = MagicMock(
+            tx_hash="0xmocked",
+            status="confirmed"
+        )
+        
+        result = wallet.pay(to="merchant", amount=50, token="USDC")
+        
+        assert result.success
+        mock_exec.assert_called_once()
+```
+
+### 3. Test Error Scenarios
+
+```python
+def test_network_error_handling(client):
+    """Test handling of network errors."""
+    with patch('httpx.AsyncClient.post') as mock_post:
+        mock_post.side_effect = TimeoutError("Connection timeout")
+        
+        with pytest.raises(TimeoutError):
+            wallet.pay(to="merchant", amount=50, token="USDC")
+
+def test_api_rate_limit(client):
+    """Test rate limit handling."""
+    # Make many requests rapidly
+    for i in range(100):
+        try:
+            wallet.pay(to=f"merchant-{i}", amount=1, token="USDC")
+        except Exception as e:
+            if "rate limit" in str(e).lower():
+                print(f"Hit rate limit at request {i}")
+                break
+```
+
+### 4. Verify Idempotency
+
+```python
+def test_payment_idempotency():
+    """Test idempotency prevents duplicate payments."""
+    idempotency_key = f"test-{uuid.uuid4()}"
+    
+    # First payment
+    result1 = wallet.pay(
+        to="merchant",
+        amount=50,
+        token="USDC",
+        idempotency_key=idempotency_key
+    )
+    
+    # Retry with same key
+    result2 = wallet.pay(
+        to="merchant",
+        amount=50,
+        token="USDC",
+        idempotency_key=idempotency_key
+    )
+    
+    # Should return same result
+    assert result1.tx_id == result2.tx_id
+    
+    # Balance only decreased once
+    assert wallet.balance == 950.00
+```
+
+## CI/CD Integration
+
+### GitHub Actions
+
+```yaml
+name: Test Sardis Integration
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    env:
+      SARDIS_API_KEY: ${{ secrets.SARDIS_SANDBOX_KEY }}
+      SARDIS_ENVIRONMENT: sandbox
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      
+      - name: Install dependencies
+        run: |
+          pip install sardis pytest pytest-asyncio
+      
+      - name: Run tests
+        run: |
+          pytest tests/ -v --tb=short
+```
+
+### pytest Configuration
+
+```ini
+# pytest.ini
+[pytest]
+testpaths = tests
+python_files = test_*.py
+python_classes = Test*
+python_functions = test_*
+
+# Mark slow tests
+markers =
+    slow: marks tests as slow (deselect with '-m "not slow"')
+    integration: marks tests as integration tests
+    sandbox: marks tests that require sandbox environment
+
+# Async support
+asyncio_mode = auto
+
+# Coverage
+addopts = 
+    --cov=src
+    --cov-report=html
+    --cov-report=term-missing
+```
+
+## Troubleshooting Tests
+
+<AccordionGroup>
+  <Accordion title="Tests fail with 'Invalid API key'">
+    Check your API key environment variable:
+    
+    ```bash
+    echo $SARDIS_API_KEY
+    # Should output: sk_sandbox_...
+    ```
+    
+    Make sure you're using a sandbox key in tests, not production.
+  </Accordion>
+
+  <Accordion title="Testnet transactions timing out">
+    Testnets can be slow. Increase timeouts:
+    
+    ```python
+    client = SardisClient(
+        api_key="sk_sandbox_...",
+        timeout=60.0  # 60 seconds
+    )
+    
+    # Or wait explicitly
+    result = wallet.pay(to="merchant", amount=50, token="USDC")
+    
+    # Wait for confirmation
+    for _ in range(30):  # 30 attempts
+        tx = client.transactions.get(result.tx_id)
+        if tx.status == "confirmed":
+            break
+        time.sleep(2)
+    ```
+  </Accordion>
+
+  <Accordion title="Mock vs real API in tests">
+    Use environment variable to switch:
+    
+    ```python
+    import os
+    
+    @pytest.fixture
+    def client():
+        if os.environ.get("USE_MOCK_API") == "true":
+            return MockSardisClient()
+        else:
+            return SardisClient(api_key=os.environ["SARDIS_API_KEY"])
+    ```
+    
+    Run with mocks for fast unit tests:
+    ```bash
+    USE_MOCK_API=true pytest tests/unit/
+    ```
+    
+    Run with real API for integration tests:
+    ```bash
+    pytest tests/integration/
+    ```
+  </Accordion>
+
+  <Accordion title="Test data cleanup">
+    Clean up test data after tests:
+    
+    ```python
+    @pytest.fixture
+    def test_wallet(client):
+        wallet = client.wallets.create(...)
+        yield wallet
+        
+        # Cleanup
+        try:
+            client.wallets.delete(wallet_id=wallet.wallet_id)
+        except Exception as e:
+            print(f"Cleanup failed: {e}")
+    ```
+    
+    Or use a dedicated test organization that's periodically cleared.
+  </Accordion>
+</AccordionGroup>
+
+## Moving to Production
+
+When ready to go live:
+
+1. **Get Production API Key**
+   ```python
+   # Production keys start with "sk_prod_"
+   client = SardisClient(
+       api_key="sk_prod_...",
+       environment="production"
+   )
+   ```
+
+2. **Update Chain Configuration**
+   ```python
+   # Use mainnets
+   wallet = client.wallets.create(
+       name="production-wallet",
+       chain="base",  # Mainnet (not base_sepolia)
+       policy="Max $1000/day"
+   )
+   ```
+
+3. **Enable Production KYC**
+   ```python
+   # Use production Persona template
+   inquiry = client.compliance.kyc.create_inquiry(
+       reference_id="real_user_123",
+       name_first="John",
+       name_last="Doe",
+       email="john@example.com"
+   )
+   ```
+
+4. **Monitor in Production**
+   ```python
+   # Set up alerts
+   client.alerts.create(
+       name="High-value transaction",
+       condition="amount > 10000",
+       channels=["email", "slack"]
+   )
+   ```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Complete API documentation
+  </Card>
+  <Card title="Webhooks" icon="webhook" href="/guides/webhooks">
+    Test webhook integration
+  </Card>
+  <Card title="Compliance & KYC" icon="shield-check" href="/guides/compliance-kyc">
+    Test compliance flows
+  </Card>
+  <Card title="Making Payments" icon="credit-card" href="/guides/making-payments">
+    Test payment execution
+  </Card>
+</CardGroup>

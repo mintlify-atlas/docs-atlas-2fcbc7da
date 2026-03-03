@@ -1,0 +1,75 @@
+---
+title: 'Approvals'
+description: 'Human-in-the-loop approval workflows'
+---
+
+## Overview
+
+When agents attempt transactions that exceed policy limits, they can request human approval.
+
+## Create Approval Request
+
+```bash cURL
+curl -X POST https://api.sardis.sh/api/v2/approvals \
+  -H "Authorization: Bearer sk_live_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "payment",
+    "requested_by": "agent_abc123",
+    "amount": "5000.00",
+    "vendor": "aws.amazon.com",
+    "purpose": "Infrastructure scaling",
+    "urgency": "high",
+    "expires_in_hours": 24
+  }'
+```
+
+```python Python
+approval = client.approvals.create(
+    action="payment",
+    requested_by="agent_abc123",
+    amount="5000.00",
+    vendor="aws.amazon.com",
+    purpose="Infrastructure scaling",
+    urgency="high"
+)
+
+print(f"Approval ID: {approval.id}")
+```
+
+## List Pending Approvals
+
+```bash cURL
+curl https://api.sardis.sh/api/v2/approvals?status=pending \
+  -H "Authorization: Bearer sk_live_your_api_key"
+```
+
+## Approve Request
+
+```bash cURL
+curl -X POST https://api.sardis.sh/api/v2/approvals/appr_abc123/approve \
+  -H "Authorization: Bearer sk_live_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "reviewed_by": "admin@company.com",
+    "reason": "Approved for infrastructure needs"
+  }'
+```
+
+## Deny Request
+
+```bash cURL
+curl -X POST https://api.sardis.sh/api/v2/approvals/appr_abc123/deny \
+  -H "Authorization: Bearer sk_live_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "reviewed_by": "admin@company.com",
+    "reason": "Amount exceeds monthly budget"
+  }'
+```
+
+## Urgency Levels
+
+- `low`: Normal workflow, 48-hour expiry
+- `medium`: Standard, 24-hour expiry  
+- `high`: Urgent, 4-hour expiry

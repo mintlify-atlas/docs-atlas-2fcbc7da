@@ -1,0 +1,381 @@
+---
+title: "Supported Chains"
+description: "Comprehensive guide to blockchain networks supported by Sardis, including mainnet and testnet configurations."
+---
+
+Sardis supports multiple EVM-compatible blockchain networks, enabling flexible deployment across low-cost L2s and high-liquidity mainnets.
+
+## Overview
+
+Sardis provides native support for 6 mainnet chains and 5 testnet environments, with intelligent chain routing and automatic RPC failover.
+
+| Chain | Chain ID | Type | Native Token | Block Time |
+|-------|----------|------|--------------|------------|
+| Base | 8453 | Mainnet | ETH | 2s |
+| Polygon | 137 | Mainnet | MATIC | 2s |
+| Ethereum | 1 | Mainnet | ETH | 12s |
+| Arbitrum | 42161 | Mainnet | ETH | 1s |
+| Optimism | 10 | Mainnet | ETH | 2s |
+| Arc Testnet | 5042002 | Testnet | USDC | 0.5s |
+
+---
+
+## Mainnet Chains
+
+### Base
+
+**Chain ID**: `8453`
+
+**RPC Endpoints** (with automatic fallback):
+- Primary: `https://mainnet.base.org`
+- Fallback: `https://base-mainnet.public.blastapi.io`
+- Fallback: `https://base.llamarpc.com`
+
+**Block Explorer**: https://basescan.org
+
+**Gas Configuration**:
+- Max Gas Price: 100 gwei
+- Max Transaction Cost: $10 USD
+- Typical Gas Price: 0.001-0.01 gwei
+
+**Supported Tokens**: USDC, EURC
+
+**Best For**: Low-cost transactions, high throughput agent operations
+
+**Configuration** (`packages/sardis-chain/src/sardis_chain/config.py:401-413`):
+```python
+chains["base"] = ChainConfig(
+    chain_id=8453,
+    name="base",
+    display_name="Base",
+    block_time_seconds=2.0,
+    confirmations_required=1,
+    max_gas_price_gwei=Decimal("100"),
+)
+```
+
+---
+
+### Polygon
+
+**Chain ID**: `137`
+
+**RPC Endpoints**:
+- Primary: `https://polygon-rpc.com`
+- Fallback: `https://polygon-mainnet.public.blastapi.io`
+- Fallback: `https://polygon.llamarpc.com`
+
+**Block Explorer**: https://polygonscan.com
+
+**Gas Configuration**:
+- Max Gas Price: 1000 gwei
+- Max Transaction Cost: $20 USD
+- Typical Gas Price: 30-100 gwei
+
+**Supported Tokens**: USDC, USDT, EURC
+
+**Best For**: High token availability, multi-token operations
+
+---
+
+### Ethereum
+
+**Chain ID**: `1`
+
+**RPC Endpoints**:
+- Primary: `https://eth.llamarpc.com`
+- Fallback: `https://ethereum-rpc.publicnode.com`
+- Fallback: `https://eth.drpc.org`
+
+**Block Explorer**: https://etherscan.io
+
+**Gas Configuration**:
+- Max Gas Price: 1000 gwei
+- Max Transaction Cost: $100 USD
+- Typical Gas Price: 15-50 gwei
+
+**Supported Tokens**: USDC, USDT, PYUSD, EURC
+
+**Best For**: Maximum liquidity, enterprise-grade security
+
+---
+
+### Arbitrum
+
+**Chain ID**: `42161`
+
+**RPC Endpoints**:
+- Primary: `https://arb1.arbitrum.io/rpc`
+- Fallback: `https://arbitrum-one-rpc.publicnode.com`
+- Fallback: `https://arbitrum.llamarpc.com`
+
+**Block Explorer**: https://arbiscan.io
+
+**Gas Configuration**:
+- Max Gas Price: 100 gwei
+- Max Transaction Cost: $10 USD
+- Typical Gas Price: 0.1-0.5 gwei
+
+**Supported Tokens**: USDC, USDT
+
+**Best For**: Ultra-low latency (1s blocks), high-frequency operations
+
+---
+
+### Optimism
+
+**Chain ID**: `10`
+
+**RPC Endpoints**:
+- Primary: `https://mainnet.optimism.io`
+- Fallback: `https://optimism-rpc.publicnode.com`
+- Fallback: `https://optimism.llamarpc.com`
+
+**Block Explorer**: https://optimistic.etherscan.io
+
+**Gas Configuration**:
+- Max Gas Price: 100 gwei
+- Max Transaction Cost: $10 USD
+- Typical Gas Price: 0.001-0.01 gwei
+
+**Supported Tokens**: USDC, USDT
+
+**Best For**: OP Stack ecosystem integration, low-cost transfers
+
+---
+
+### Arc Testnet (Circle L1)
+
+**Chain ID**: `5042002`
+
+**RPC Endpoints**:
+- Primary: `https://rpc.testnet.arc.network`
+- Fallback: `https://rpc.blockdaemon.testnet.arc.network`
+- Fallback: `https://rpc.drpc.testnet.arc.network`
+
+**Block Explorer**: https://testnet.arcscan.app
+
+**Gas Configuration**:
+- Native Gas Token: USDC (first USDC-native chain)
+- Max Transaction Cost: $1000 USD
+- Typical Gas Price: Sub-cent
+
+**Supported Tokens**: USDC, EURC
+
+**Best For**: Testing USDC-native gas payments, Circle ecosystem integration
+
+**Unique Features**:
+- Pay gas fees in USDC (no need for native ETH)
+- Ultra-fast blocks (0.5s)
+- Built by Circle for stablecoin infrastructure
+
+---
+
+## Testnet Chains
+
+### Base Sepolia
+
+**Chain ID**: `84532`  
+**RPC**: `https://sepolia.base.org`  
+**Explorer**: https://sepolia.basescan.org  
+**Faucet**: https://docs.base.org/tools/network-faucets
+
+### Polygon Amoy
+
+**Chain ID**: `80002`  
+**RPC**: `https://rpc-amoy.polygon.technology`  
+**Explorer**: https://amoy.polygonscan.com
+
+### Ethereum Sepolia
+
+**Chain ID**: `11155111`  
+**RPC**: `https://rpc.sepolia.org`  
+**Explorer**: https://sepolia.etherscan.io
+
+### Arbitrum Sepolia
+
+**Chain ID**: `421614`  
+**RPC**: `https://sepolia-rollup.arbitrum.io/rpc`  
+**Explorer**: https://sepolia.arbiscan.io
+
+### Optimism Sepolia
+
+**Chain ID**: `11155420`  
+**RPC**: `https://sepolia.optimism.io`  
+**Explorer**: https://sepolia-optimism.etherscan.io
+
+---
+
+## Chain Selection Best Practices
+
+### By Use Case
+
+**High-Frequency Microtransactions** (< $10)
+- **Best**: Base, Optimism, Arbitrum
+- **Why**: Sub-cent gas fees, fast finality
+
+**Large Transfers** (> $10,000)
+- **Best**: Ethereum
+- **Why**: Maximum liquidity, security, decentralization
+
+**Multi-Token Operations**
+- **Best**: Polygon, Ethereum
+- **Why**: Broadest token support (USDC, USDT, EURC, PYUSD)
+
+**Agent Testing**
+- **Best**: Arc Testnet, Base Sepolia
+- **Why**: USDC-native gas (Arc), fastest Base testnet
+
+### Gas Cost Comparison
+
+**ERC-20 Transfer (65,000 gas)**:
+
+| Chain | Gas Price | Cost (USD) | Time |
+|-------|-----------|------------|------|
+| Base | 0.003 gwei | $0.0001 | 6s |
+| Optimism | 0.003 gwei | $0.0001 | 6s |
+| Arbitrum | 0.2 gwei | $0.001 | 3s |
+| Polygon | 50 gwei | $0.003 | 6s |
+| Ethereum | 25 gwei | $0.05 | 36s |
+
+### Environment-Specific Routing
+
+Sardis automatically routes transactions based on environment configuration:
+
+```python
+from sardis_v2_core.config import load_settings
+
+settings = load_settings()
+
+# Default chains by environment
+if settings.environment == "dev":
+    default_chain = "base_sepolia"  # Testnet
+elif settings.environment == "sandbox":
+    default_chain = "arc_testnet"  # Circle's L1 testnet
+else:  # production
+    default_chain = "base"  # Mainnet
+```
+
+**Configuration** (`packages/sardis-core/src/sardis_v2_core/config.py:245-260`):
+
+```python
+chains: List[ChainConfig] = Field(default_factory=lambda: [
+    ChainConfig(
+        name="base_sepolia",
+        rpc_url="https://sepolia.base.org",
+        chain_id=84532,
+        stablecoins=["USDC"],
+    ),
+    ChainConfig(
+        name="base",
+        rpc_url="https://mainnet.base.org",
+        chain_id=8453,
+        stablecoins=["USDC", "EURC"],
+    ),
+])
+```
+
+---
+
+## Custom RPC Configuration
+
+Override default RPC endpoints via environment variables:
+
+```bash
+# Chain-specific RPC override
+BASE_RPC_URL="https://your-custom-base-rpc.com"
+ETHEREUM_RPC_URL="https://your-infura-endpoint.io/v3/YOUR_KEY"
+
+# Or with SARDIS_ prefix
+SARDIS_BASE_RPC_URL="https://your-custom-base-rpc.com"
+```
+
+Sardis automatically prefers custom RPCs while maintaining fallback support:
+
+```python
+# Custom RPC takes priority, but fallbacks remain active
+endpoints = [
+    RPCEndpointConfig(url=custom_rpc, priority=0),
+    RPCEndpointConfig(url="https://mainnet.base.org", priority=1),
+    RPCEndpointConfig(url="https://base.llamarpc.com", priority=2),
+]
+```
+
+**Implementation** (`packages/sardis-chain/src/sardis_chain/config.py:310-333`).
+
+---
+
+## RPC Health & Failover
+
+Sardis includes production-grade RPC management:
+
+**Health Checks**:
+- Automatic endpoint health monitoring every 60s
+- 3 consecutive failures trigger failover
+- Weighted round-robin for load distribution
+
+**Retry Logic**:
+- Max 3 retries per endpoint
+- 1s delay between retries
+- Automatic fallback to next endpoint
+
+**Timeout Handling**:
+- Default: 30s per RPC call
+- Configurable per-endpoint
+- Transaction-specific timeouts
+
+**Configuration** (`packages/sardis-chain/src/sardis_chain/config.py:88-103`):
+
+```python
+@dataclass
+class RPCEndpointConfig:
+    url: str
+    priority: int = 0
+    timeout_seconds: float = 30.0
+    max_retries: int = 3
+    retry_delay_seconds: float = 1.0
+    health_check_interval_seconds: float = 60.0
+    max_consecutive_failures: int = 3
+```
+
+---
+
+## Chain Validation
+
+Sardis validates chain IDs at runtime to prevent fund loss from misconfiguration:
+
+```python
+from sardis_chain.config import validate_chain_id, CHAIN_ID_MAP
+
+# Validate received chain ID matches expected
+if not validate_chain_id("base", received_chain_id):
+    raise SecurityError("Chain ID mismatch - wrong network!")
+
+# Chain ID mapping
+CHAIN_ID_MAP = {
+    "ethereum": 1,
+    "base": 8453,
+    "polygon": 137,
+    "arbitrum": 42161,
+    "optimism": 10,
+    "arc_testnet": 5042002,
+}
+```
+
+**Implementation** (`packages/sardis-chain/src/sardis_chain/config.py:574-594`).
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Supported Tokens" icon="coins" href="/blockchain/supported-tokens">
+    Token addresses and configurations per chain
+  </Card>
+  <Card title="Gas Optimization" icon="gauge-high" href="/blockchain/gas-optimization">
+    Strategies for minimizing transaction costs
+  </Card>
+  <Card title="Smart Contracts" icon="file-contract" href="/blockchain/smart-contracts">
+    Policy enforcement and paymaster contracts
+  </Card>
+</CardGroup>

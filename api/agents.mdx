@@ -1,0 +1,556 @@
+---
+title: 'Agents'
+description: 'Create and manage AI agent identities'
+---
+
+## The Agent Object
+
+An agent represents an AI identity with spending policies and wallets.
+
+### Attributes
+
+<ResponseField name="agent_id" type="string" required>
+  Unique identifier for the agent
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Agent display name
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Optional description of the agent's purpose
+</ResponseField>
+
+<ResponseField name="owner_id" type="string" required>
+  Organization ID that owns this agent
+</ResponseField>
+
+<ResponseField name="wallet_id" type="string">
+  Associated wallet ID (if wallet created)
+</ResponseField>
+
+<ResponseField name="spending_limits" type="object" required>
+  Spending limits for this agent
+  <Expandable title="properties">
+    <ResponseField name="per_transaction" type="string">Per-transaction limit</ResponseField>
+    <ResponseField name="daily" type="string">Daily spending limit</ResponseField>
+    <ResponseField name="monthly" type="string">Monthly spending limit</ResponseField>
+    <ResponseField name="total" type="string">Total lifetime limit</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="policy" type="object" required>
+  Spending policy rules
+  <Expandable title="properties">
+    <ResponseField name="allowed_merchants" type="array">Whitelist of allowed merchants</ResponseField>
+    <ResponseField name="blocked_merchants" type="array">Blacklist of blocked merchants</ResponseField>
+    <ResponseField name="allowed_categories" type="array">Allowed MCC categories</ResponseField>
+    <ResponseField name="blocked_categories" type="array">Blocked MCC categories</ResponseField>
+    <ResponseField name="require_approval_above" type="string">Amount requiring human approval</ResponseField>
+    <ResponseField name="auto_approve_below" type="string">Auto-approve threshold</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="kya_level" type="string">
+  KYA (Know Your Agent) level: `none`, `basic`, `verified`, `attested`
+</ResponseField>
+
+<ResponseField name="kya_status" type="string">
+  KYA status: `pending`, `active`, `suspended`
+</ResponseField>
+
+<ResponseField name="is_active" type="boolean">
+  Whether the agent is active
+</ResponseField>
+
+<ResponseField name="metadata" type="object">
+  Custom metadata key-value pairs
+</ResponseField>
+
+<ResponseField name="created_at" type="string">
+  ISO 8601 timestamp of agent creation
+</ResponseField>
+
+<ResponseField name="updated_at" type="string">
+  ISO 8601 timestamp of last update
+</ResponseField>
+
+---
+
+## Create Agent
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST https://api.sardis.sh/api/v2/agents \
+  -H "Authorization: Bearer sk_live_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "shopping-agent",
+    "description": "Handles e-commerce purchases",
+    "spending_limits": {
+      "per_transaction": "500.00",
+      "daily": "2000.00",
+      "monthly": "20000.00"
+    },
+    "policy": {
+      "blocked_categories": ["gambling", "adult_content"],
+      "auto_approve_below": "100.00"
+    },
+    "create_wallet": true
+  }'
+```
+
+```python Python
+from sardis_sdk import SardisClient
+
+client = SardisClient(api_key="sk_live_your_api_key")
+
+agent = client.agents.create(
+    name="shopping-agent",
+    description="Handles e-commerce purchases",
+    spending_limits={
+        "per_transaction": "500.00",
+        "daily": "2000.00",
+        "monthly": "20000.00"
+    },
+    policy={
+        "blocked_categories": ["gambling", "adult_content"],
+        "auto_approve_below": "100.00"
+    },
+    metadata={"framework": "langchain", "version": "0.1.0"}
+)
+
+print(f"Agent created: {agent.agent_id}")
+```
+
+```typescript TypeScript
+import { SardisClient } from '@sardis/sdk';
+
+const client = new SardisClient({ apiKey: 'sk_live_your_api_key' });
+
+const agent = await client.agents.create({
+  name: 'shopping-agent',
+  description: 'Handles e-commerce purchases',
+  spendingLimits: {
+    perTransaction: '500.00',
+    daily: '2000.00',
+    monthly: '20000.00'
+  },
+  policy: {
+    blockedCategories: ['gambling', 'adult_content'],
+    autoApproveBelow: '100.00'
+  },
+  createWallet: true
+});
+
+console.log(`Agent created: ${agent.agentId}`);
+```
+
+</CodeGroup>
+
+### Request Body
+
+<ParamField body="name" type="string" required>
+  Agent name
+</ParamField>
+
+<ParamField body="description" type="string">
+  Agent description
+</ParamField>
+
+<ParamField body="spending_limits" type="object">
+  Spending limits (defaults applied if omitted)
+</ParamField>
+
+<ParamField body="policy" type="object">
+  Spending policy rules
+</ParamField>
+
+<ParamField body="create_wallet" type="boolean" default="true">
+  Whether to automatically create a wallet
+</ParamField>
+
+<ParamField body="metadata" type="object">
+  Custom metadata
+</ParamField>
+
+### Response
+
+<ResponseExample>
+```json
+{
+  "agent_id": "agent_abc123def456",
+  "name": "shopping-agent",
+  "description": "Handles e-commerce purchases",
+  "owner_id": "org_xyz789",
+  "wallet_id": "wallet_ghi789jkl012",
+  "spending_limits": {
+    "per_transaction": "500.00",
+    "daily": "2000.00",
+    "monthly": "20000.00",
+    "total": "100000.00"
+  },
+  "policy": {
+    "allowed_merchants": null,
+    "blocked_merchants": [],
+    "allowed_categories": null,
+    "blocked_categories": ["gambling", "adult_content"],
+    "require_approval_above": null,
+    "auto_approve_below": "100.00"
+  },
+  "kya_level": "basic",
+  "kya_status": "active",
+  "is_active": true,
+  "metadata": {
+    "framework": "langchain",
+    "version": "0.1.0"
+  },
+  "created_at": "2025-03-03T10:00:00Z",
+  "updated_at": "2025-03-03T10:00:00Z"
+}
+```
+</ResponseExample>
+
+---
+
+## List Agents
+
+<CodeGroup>
+
+```bash cURL
+curl https://api.sardis.sh/api/v2/agents?limit=10&offset=0 \
+  -H "Authorization: Bearer sk_live_your_api_key"
+```
+
+```python Python
+agents = client.agents.list(limit=10, offset=0)
+
+for agent in agents:
+    print(f"{agent.name}: {agent.agent_id}")
+```
+
+```typescript TypeScript
+const agents = await client.agents.list({ limit: 10, offset: 0 });
+
+agents.forEach(agent => {
+  console.log(`${agent.name}: ${agent.agentId}`);
+});
+```
+
+</CodeGroup>
+
+### Query Parameters
+
+<ParamField query="limit" type="integer" default="50">
+  Number of agents to return (max: 100)
+</ParamField>
+
+<ParamField query="offset" type="integer" default="0">
+  Number of agents to skip
+</ParamField>
+
+<ParamField query="is_active" type="boolean">
+  Filter by active status
+</ParamField>
+
+### Response
+
+<ResponseExample>
+```json
+[
+  {
+    "agent_id": "agent_abc123",
+    "name": "shopping-agent",
+    "description": "Handles e-commerce purchases",
+    "owner_id": "org_xyz789",
+    "wallet_id": "wallet_ghi789",
+    "spending_limits": {...},
+    "policy": {...},
+    "kya_level": "basic",
+    "kya_status": "active",
+    "is_active": true,
+    "metadata": {},
+    "created_at": "2025-03-03T10:00:00Z",
+    "updated_at": "2025-03-03T10:00:00Z"
+  }
+]
+```
+</ResponseExample>
+
+---
+
+## Get Agent
+
+<CodeGroup>
+
+```bash cURL
+curl https://api.sardis.sh/api/v2/agents/agent_abc123 \
+  -H "Authorization: Bearer sk_live_your_api_key"
+```
+
+```python Python
+agent = client.agents.get("agent_abc123")
+print(f"Agent: {agent.name}")
+```
+
+```typescript TypeScript
+const agent = await client.agents.get('agent_abc123');
+console.log(`Agent: ${agent.name}`);
+```
+
+</CodeGroup>
+
+### Path Parameters
+
+<ParamField path="agent_id" type="string" required>
+  Agent ID to retrieve
+</ParamField>
+
+---
+
+## Update Agent
+
+<CodeGroup>
+
+```bash cURL
+curl -X PATCH https://api.sardis.sh/api/v2/agents/agent_abc123 \
+  -H "Authorization: Bearer sk_live_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "spending_limits": {
+      "daily": "3000.00"
+    },
+    "policy": {
+      "auto_approve_below": "200.00"
+    }
+  }'
+```
+
+```python Python
+agent = client.agents.update(
+    "agent_abc123",
+    spending_limits={"daily": "3000.00"},
+    policy={"auto_approve_below": "200.00"}
+)
+```
+
+```typescript TypeScript
+const agent = await client.agents.update('agent_abc123', {
+  spendingLimits: { daily: '3000.00' },
+  policy: { autoApproveBelow: '200.00' }
+});
+```
+
+</CodeGroup>
+
+### Request Body
+
+All fields are optional. Only provided fields will be updated.
+
+<ParamField body="name" type="string">
+  New agent name
+</ParamField>
+
+<ParamField body="description" type="string">
+  New description
+</ParamField>
+
+<ParamField body="spending_limits" type="object">
+  Updated spending limits
+</ParamField>
+
+<ParamField body="policy" type="object">
+  Updated policy
+</ParamField>
+
+<ParamField body="is_active" type="boolean">
+  Active status
+</ParamField>
+
+---
+
+## Delete Agent
+
+<Warning>
+Deleting an agent is permanent and cannot be undone. Associated wallets are not deleted.
+</Warning>
+
+<CodeGroup>
+
+```bash cURL
+curl -X DELETE https://api.sardis.sh/api/v2/agents/agent_abc123 \
+  -H "Authorization: Bearer sk_live_your_api_key"
+```
+
+```python Python
+client.agents.delete("agent_abc123")
+```
+
+```typescript TypeScript
+await client.agents.delete('agent_abc123');
+```
+
+</CodeGroup>
+
+---
+
+## Get Agent Limits
+
+Retrieve current spending limits and usage.
+
+<CodeGroup>
+
+```bash cURL
+curl https://api.sardis.sh/api/v2/agents/agent_abc123/limits \
+  -H "Authorization: Bearer sk_live_your_api_key"
+```
+
+```python Python
+limits = client.agents.get_limits("agent_abc123")
+print(f"Daily remaining: {limits['spending_limits']['daily']}")
+```
+
+</CodeGroup>
+
+### Response
+
+<ResponseExample>
+```json
+{
+  "agent_id": "agent_abc123",
+  "spending_limits": {
+    "per_transaction": "500.00",
+    "daily": "2000.00",
+    "monthly": "20000.00",
+    "total": "100000.00"
+  },
+  "wallet": {
+    "wallet_id": "wallet_ghi789",
+    "addresses": {
+      "base": "0x1234..."
+    },
+    "mpc_provider": "turnkey"
+  }
+}
+```
+</ResponseExample>
+
+---
+
+## KYA (Know Your Agent)
+
+### Get KYA Status
+
+<CodeGroup>
+
+```bash cURL
+curl https://api.sardis.sh/api/v2/agents/agent_abc123/kya \
+  -H "Authorization: Bearer sk_live_your_api_key"
+```
+
+```python Python
+kya = client.agents.get_kya("agent_abc123")
+print(f"KYA Level: {kya['kya_level']}")
+```
+
+</CodeGroup>
+
+### Response
+
+<ResponseExample>
+```json
+{
+  "agent_id": "agent_abc123",
+  "kya_level": "basic",
+  "kya_status": "active",
+  "manifest": {
+    "capabilities": ["saas_subscription", "api_credits"],
+    "max_budget_per_tx": "500.00",
+    "daily_budget": "2000.00",
+    "framework": "langchain"
+  },
+  "trust_score": 0.85
+}
+```
+</ResponseExample>
+
+### Upgrade KYA Level
+
+<CodeGroup>
+
+```bash cURL
+curl -X POST https://api.sardis.sh/api/v2/agents/agent_abc123/kya/upgrade \
+  -H "Authorization: Bearer sk_live_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "target_level": "verified",
+    "anchor_verification_id": "persona_verif_xyz"
+  }'
+```
+
+```python Python
+result = client.agents.upgrade_kya(
+    "agent_abc123",
+    target_level="verified",
+    anchor_verification_id="persona_verif_xyz"
+)
+```
+
+</CodeGroup>
+
+<ParamField body="target_level" type="string" required>
+  Target KYA level: `basic`, `verified`, or `attested`
+</ParamField>
+
+<ParamField body="anchor_verification_id" type="string">
+  Owner KYC verification ID (required for `verified`)
+</ParamField>
+
+<ParamField body="code_hash" type="string">
+  SHA-256 hash of agent code (required for `attested`)
+</ParamField>
+
+---
+
+## Common Use Cases
+
+### Create Agent with Natural Language Policy
+
+```python
+from sardis_sdk import SardisClient
+
+client = SardisClient(api_key="sk_live_your_api_key")
+
+# Parse natural language policy
+policy = client.policies.parse(
+    natural_language="Allow max $500 per day on AWS and OpenAI, block gambling"
+)
+
+# Create agent with parsed policy
+agent = client.agents.create(
+    name="saas-agent",
+    policy=policy.to_dict()
+)
+```
+
+### Create Multi-Agent System
+
+```python
+# Create a group for shared budget
+group = client.groups.create(
+    name="marketing-team",
+    budget={
+        "daily": "5000.00",
+        "monthly": "50000.00"
+    }
+)
+
+# Create agents in the group
+for agent_name in ["social-media-agent", "ad-buyer-agent", "analytics-agent"]:
+    agent = client.agents.create(
+        name=agent_name,
+        spending_limits={"per_transaction": "500.00"}
+    )
+    client.groups.add_agent(group.group_id, agent.agent_id)
+```

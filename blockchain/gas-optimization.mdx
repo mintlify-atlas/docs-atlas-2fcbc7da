@@ -1,0 +1,643 @@
+---
+title: "Gas Optimization"
+description: "Strategies and tools for minimizing blockchain transaction costs across multiple chains."
+---
+
+Sardis includes built-in gas optimization tools to minimize transaction costs through intelligent chain selection, batch processing, and real-time gas price monitoring.
+
+## Overview
+
+Gas optimization in Sardis:
+
+1. **Multi-Chain Gas Estimation**: Real-time gas price tracking across all supported chains
+2. **Intelligent Route Finding**: Automatic selection of cheapest chain for transfers
+3. **Batch Transactions**: Combine multiple operations to reduce overhead
+4. **Congestion Detection**: Avoid high-gas periods automatically
+
+**Source**: `packages/sardis-chain/src/sardis_chain/gas_optimizer.py`
+
+---
+
+## Gas Optimizer
+
+### Quick Start
+
+```python
+from sardis_chain.gas_optimizer import get_gas_optimizer
+from decimal import Decimal
+
+optimizer = get_gas_optimizer()
+
+# Get gas estimate for a specific chain
+estimate = await optimizer.estimate_gas(
+    chain="base",
+    token="USDC",
+    amount=Decimal("100"),
+    destination="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+)
+
+print(f"Gas Price: {estimate.gas_price_gwei} gwei")
+print(f"Cost (USD): ${estimate.estimated_cost_usd:.4f}")
+print(f"Time: ~{estimate.estimated_time_seconds}s")
+print(f"Congestion: {estimate.congestion_level}")
+```
+
+**Output** (Base example):
+```
+Gas Price: 0.003 gwei
+Cost (USD): $0.0001
+Time: ~6s
+Congestion: low
+```
+
+---
+
+## Cost Comparison by Chain
+
+### Typical ERC-20 Transfer Costs
+
+**65,000 gas units** (standard USDC transfer):
+
+| Chain | Gas Price | Cost (USD) | Time | Congestion |
+|-------|-----------|------------|------|------------|
+| **Base** | 0.003 gwei | $0.0001 | 6s | Low |
+| **Optimism** | 0.003 gwei | $0.0001 | 6s | Low |
+| **Arbitrum** | 0.2 gwei | $0.001 | 3s | Low |
+| **Polygon** | 50 gwei | $0.003 | 6s | Medium |
+| **Ethereum** | 25 gwei | $0.05 | 36s | Medium |
+
+**Source**: `examples/gas_optimizer_demo.py:15-40`
+
+### Real-Time Cost Estimation
+
+```python
+from sardis_chain.gas_optimizer import get_gas_optimizer
+
+optimizer = get_gas_optimizer()
+
+# Compare costs across all chains
+chains = ["ethereum", "base", "polygon", "arbitrum", "optimism"]
+
+for chain in chains:
+    estimate = await optimizer.estimate_gas(
+        chain=chain,
+        token="USDC",
+        amount=Decimal("500"),
+        destination="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+    )
+    print(f"{chain}: ${estimate.estimated_cost_usd:.6f}")
+```
+
+**Example Output**:
+```
+base: $0.000100
+optimism: $0.000100
+arbitrum: $0.001000
+polygon: $0.003000
+ethereum: $0.050000
+```
+
+---
+
+## Intelligent Route Finding
+
+### Find Cheapest Chain
+
+```python
+from sardis_chain.gas_optimizer import get_gas_optimizer
+from decimal import Decimal
+
+optimizer = get_gas_optimizer()
+
+# Find cheapest route for a USDC transfer
+routes = await optimizer.find_cheapest_route(
+    token="USDC",
+    amount=Decimal("500"),
+    destination="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+    source_chains=["ethereum", "base", "polygon", "arbitrum", "optimism"],
+)
+
+print(f"Found {len(routes)} routes, ranked by cost:\n")
+
+for i, route in enumerate(routes, 1):
+    recommended = "⭐ RECOMMENDED" if route.recommended else ""
+    print(f"{i}. {route.source_chain.upper()} {recommended}")
+    print(f"   Gas Cost: ${route.estimated_gas_cost_usd:.6f}")
+    print(f"   Total Cost: ${route.estimated_total_cost_usd:.6f}")
+    print(f"   Time: ~{route.estimated_time_seconds}s\n")
+```
+
+**Example Output** (`examples/gas_optimizer_demo.py:42-66`):
+```
+Found 5 routes, ranked by cost:
+
+1. BASE ⭐ RECOMMENDED
+   Gas Cost: $0.000100
+   Total Cost: $0.000100
+   Time: ~6s
+
+2. OPTIMISM
+   Gas Cost: $0.000100
+   Total Cost: $0.000100
+   Time: ~6s
+
+3. ARBITRUM
+   Gas Cost: $0.001000
+   Total Cost: $0.001000
+   Time: ~3s
+
+4. POLYGON
+   Gas Cost: $0.003000
+   Total Cost: $0.003000
+   Time: ~6s
+
+5. ETHEREUM
+   Gas Cost: $0.050000
+   Total Cost: $0.050000
+   Time: ~36s
+```
+
+### Route Selection API
+
+```python
+@dataclass
+class ChainRoute:
+    source_chain: str
+    destination_chain: Optional[str]  # None = same chain
+    token: str
+    estimated_gas_cost_usd: Decimal
+    estimated_total_cost_usd: Decimal  # gas + bridge fees
+    estimated_time_seconds: int
+    recommended: bool
+```
+
+**Implementation**: `packages/sardis-chain/src/sardis_chain/gas_optimizer.py:33-43`
+
+---
+
+## Gas Price Monitoring
+
+### Track All Chains
+
+```python
+from sardis_chain.gas_optimizer import get_gas_optimizer
+
+optimizer = get_gas_optimizer()
+
+# Get current gas prices across all chains
+prices = await optimizer.get_gas_prices()
+
+print(f"Current gas prices across {len(prices)} chains:\n")
+
+# Sort by cost (cheapest first)
+sorted_chains = sorted(
+    prices.items(),
+    key=lambda x: x[1].estimated_cost_usd
+)
+
+for chain, estimate in sorted_chains:
+    print(f"{chain:20} {estimate.gas_price_gwei:10.6f} gwei  "
+          f"${estimate.estimated_cost_usd:8.6f}  "
+          f"({estimate.congestion_level})")
+```
+
+**Example Output** (`examples/gas_optimizer_demo.py:69-90`):
+```
+Current gas prices across 10 chains:
+
+base                      0.003000 gwei  $0.000100  (low)
+base_sepolia              0.003000 gwei  $0.000100  (low)
+optimism                  0.003000 gwei  $0.000100  (low)
+optimism_sepolia          0.003000 gwei  $0.000100  (low)
+arbitrum                  0.200000 gwei  $0.001000  (low)
+arbitrum_sepolia          0.200000 gwei  $0.001000  (low)
+polygon                  50.000000 gwei  $0.003000  (medium)
+polygon_amoy              3.000000 gwei  $0.000300  (low)
+ethereum                 25.000000 gwei  $0.050000  (medium)
+ethereum_sepolia          3.000000 gwei  $0.000300  (low)
+```
+
+### Congestion Detection
+
+```python
+@dataclass
+class GasEstimate:
+    chain: str
+    gas_price_gwei: Decimal
+    estimated_gas_units: int
+    estimated_cost_usd: Decimal
+    estimated_time_seconds: int
+    congestion_level: str  # "low", "medium", "high"
+```
+
+**Congestion Calculation** (`gas_optimizer.py:128-135`):
+```python
+estimates = self.GAS_PRICE_ESTIMATES.get(chain)
+
+if gas_price_gwei <= estimates["min"] * Decimal("1.2"):
+    congestion = "low"      # Within 20% of minimum
+elif gas_price_gwei <= estimates["avg"] * Decimal("1.5"):
+    congestion = "medium"   # Within 50% of average
+else:
+    congestion = "high"     # Above 150% of average
+```
+
+---
+
+## Batch Transactions
+
+### Why Batch?
+
+**Single Transaction Overhead**:
+- Base cost: 21,000 gas
+- ERC-20 transfer: 65,000 gas
+- **Total**: 86,000 gas
+
+**Batched Transactions** (3 transfers):
+- Base cost: 21,000 gas (once)
+- 3x ERC-20 transfers: 195,000 gas
+- **Total**: 216,000 gas
+- **Savings**: ~30% (258k → 216k)
+
+### Safe Batch API
+
+```python
+from sardis_chain.safe_account import SafeAccount
+
+safe = SafeAccount(address="0x...", chain="base")
+
+# Batch multiple transfers
+transactions = [
+    {"to": "0xMerchant1", "value": 0, "data": usdc_transfer_data_1},
+    {"to": "0xMerchant2", "value": 0, "data": usdc_transfer_data_2},
+    {"to": "0xMerchant3", "value": 0, "data": usdc_transfer_data_3},
+]
+
+# Execute as single on-chain transaction
+tx_hash = await safe.batch_transactions(transactions)
+
+print(f"Batched 3 transfers in single tx: {tx_hash}")
+print(f"Gas saved: ~30%")
+```
+
+### Policy Module Considerations
+
+Batched transactions are checked individually:
+
+```solidity
+// Each transfer in batch is validated separately
+for (tx in batch) {
+    checkTransaction(safe, tx.to, tx.value, tx.data);
+}
+
+// Spending limits apply to batch total
+total_spent = sum(tx.amount for tx in batch);
+require(total_spent <= dailyLimit, "Batch exceeds daily limit");
+```
+
+---
+
+## Chain Selection Strategies
+
+### By Transaction Size
+
+**Microtransactions** (< $10):
+- **Best**: Base, Optimism, Arbitrum
+- **Why**: Sub-cent gas fees
+- **Cost**: < 0.1% of transaction value
+
+```python
+if amount < Decimal("10"):
+    recommended_chains = ["base", "optimism", "arbitrum"]
+```
+
+**Small Transfers** ($10-$100):
+- **Best**: Base, Polygon, Optimism
+- **Why**: Low gas, good token availability
+- **Cost**: < 0.01% of transaction value
+
+```python
+if Decimal("10") <= amount < Decimal("100"):
+    recommended_chains = ["base", "polygon", "optimism"]
+```
+
+**Large Transfers** (> $10,000):
+- **Best**: Ethereum
+- **Why**: Maximum security, liquidity
+- **Cost**: < 0.001% of transaction value
+
+```python
+if amount > Decimal("10000"):
+    recommended_chains = ["ethereum"]
+```
+
+### By Frequency
+
+**High-Frequency** (> 100 tx/day):
+- **Best**: Arbitrum, Base
+- **Why**: Fastest blocks (1-2s), lowest gas
+- **Example**: AI agent making frequent small purchases
+
+**Medium-Frequency** (10-100 tx/day):
+- **Best**: Base, Polygon
+- **Why**: Good balance of cost and speed
+- **Example**: E-commerce checkout agent
+
+**Low-Frequency** (< 10 tx/day):
+- **Best**: Any chain (optimize per transaction)
+- **Why**: Gas costs negligible relative to transaction value
+- **Example**: Monthly payroll distribution
+
+### By Token Availability
+
+**USDC-Only Operations**:
+- **Best**: Base, Arc Testnet
+- **Why**: Optimized for USDC (Arc uses USDC as gas token)
+
+**Multi-Token Operations**:
+- **Best**: Polygon, Ethereum
+- **Why**: Broadest token support (USDC, USDT, EURC, PYUSD)
+
+```python
+from sardis_v2_core.tokens import get_tokens_for_chain
+
+# Find chains supporting required tokens
+required_tokens = ["USDC", "EURC"]
+available_chains = []
+
+for chain in ["base", "ethereum", "polygon", "arbitrum", "optimism"]:
+    chain_tokens = get_tokens_for_chain(chain)
+    if all(token in chain_tokens for token in required_tokens):
+        available_chains.append(chain)
+
+# Result: ["base", "ethereum", "polygon"]
+```
+
+---
+
+## Caching Strategy
+
+### Gas Price Cache
+
+**TTL**: 30 seconds (configurable)
+
+```python
+optimizer = get_gas_optimizer(cache_ttl_seconds=30)
+
+# First call: fetches from chain
+price1 = await optimizer._get_gas_price("base")  # Network call
+
+# Second call: uses cache
+price2 = await optimizer._get_gas_price("base")  # Cached
+
+# After 30 seconds: fetches fresh
+await asyncio.sleep(31)
+price3 = await optimizer._get_gas_price("base")  # Network call
+```
+
+**Implementation** (`gas_optimizer.py:296-323`):
+```python
+async def _get_gas_price(self, chain: str) -> Decimal:
+    # Check cache first
+    cached = self._get_cached_gas_price(chain)
+    if cached is not None:
+        return cached
+
+    async with self._lock:
+        # Double-check after acquiring lock
+        cached = self._get_cached_gas_price(chain)
+        if cached is not None:
+            return cached
+
+        # Fetch fresh gas price
+        gas_price = await self._fetch_gas_price(chain)
+
+        # Cache it
+        self._gas_cache[chain] = (gas_price, time.monotonic())
+
+        return gas_price
+```
+
+### Cache Expiration
+
+```python
+def _get_cached_gas_price(self, chain: str) -> Optional[Decimal]:
+    if chain not in self._gas_cache:
+        return None
+
+    price, cached_at = self._gas_cache[chain]
+
+    # Check if expired
+    if time.monotonic() - cached_at > self.cache_ttl:
+        return None
+
+    return price
+```
+
+**Demo**: `examples/gas_optimizer_demo.py:93-117`
+
+---
+
+## Production Integration
+
+### Automatic Chain Selection
+
+```python
+from sardis import Sardis
+from decimal import Decimal
+
+sardis = Sardis(api_key="sk_...")
+
+# Sardis automatically selects cheapest chain
+result = await sardis.transfer(
+    amount=Decimal("100"),
+    token="USDC",
+    recipient="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+    optimize_gas=True,  # Enable automatic chain selection
+)
+
+print(f"Selected chain: {result.chain}")  # e.g., "base"
+print(f"Gas cost: ${result.gas_cost_usd:.6f}")
+print(f"Saved: ${result.gas_saved_usd:.6f}")  # vs. Ethereum
+```
+
+### Override Chain Selection
+
+```python
+# Force specific chain (bypass optimization)
+result = await sardis.transfer(
+    amount=Decimal("100"),
+    token="USDC",
+    recipient="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+    chain="ethereum",  # Explicit chain
+)
+```
+
+### Congestion Avoidance
+
+```python
+optimizer = get_gas_optimizer()
+
+# Only consider low-congestion chains
+routes = await optimizer.find_cheapest_route(
+    token="USDC",
+    amount=Decimal("500"),
+    destination="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+)
+
+# Filter out high-congestion routes
+low_congestion_routes = [
+    r for r in routes 
+    if r.congestion_level != "high"
+]
+
+recommended = low_congestion_routes[0]
+print(f"Using {recommended.source_chain} (congestion: low)")
+```
+
+---
+
+## Cost Estimation Parameters
+
+### Gas Price Estimates
+
+**Realistic ranges by chain** (`gas_optimizer.py:60-71`):
+
+```python
+GAS_PRICE_ESTIMATES = {
+    "ethereum": {"min": 15, "max": 50, "avg": 25},
+    "base": {"min": 0.001, "max": 0.01, "avg": 0.003},
+    "optimism": {"min": 0.001, "max": 0.01, "avg": 0.003},
+    "polygon": {"min": 30, "max": 100, "avg": 50},
+    "arbitrum": {"min": 0.1, "max": 0.5, "avg": 0.2},
+}
+```
+
+### Block Times
+
+**Confirmation time = block_time × 3 blocks**
+
+```python
+BLOCK_TIMES = {
+    "ethereum": 12,      # 36s confirmation
+    "base": 2,           # 6s confirmation
+    "optimism": 2,       # 6s confirmation
+    "polygon": 2,        # 6s confirmation
+    "arbitrum": 1,       # 3s confirmation
+}
+```
+
+### Bridge Fees (Future)
+
+**Cross-chain transfer estimates**:
+
+```python
+BRIDGE_FEE_PERCENTAGE = Decimal("0.001")  # 0.1%
+BRIDGE_FLAT_FEE_USD = Decimal("0.50")
+BRIDGE_TIME_SECONDS = 300  # 5 minutes
+
+# Total bridge fee
+bridge_fee = BRIDGE_FLAT_FEE_USD + (amount * BRIDGE_FEE_PERCENTAGE)
+```
+
+**Note**: Sardis currently routes within same chain. Cross-chain bridging coming Q2 2026.
+
+---
+
+## Gas Estimation API Reference
+
+### GasOptimizer Class
+
+```python
+class GasOptimizer:
+    def __init__(
+        self,
+        rpc_urls: Optional[Dict[str, str]] = None,
+        cache_ttl_seconds: int = 30,
+    ):
+        """Initialize gas optimizer.
+        
+        Args:
+            rpc_urls: Custom RPC URLs by chain
+            cache_ttl_seconds: Gas price cache TTL
+        """
+
+    async def estimate_gas(
+        self,
+        chain: str,
+        token: str,
+        amount: Decimal,
+        destination: str,
+    ) -> GasEstimate:
+        """Estimate gas cost for single chain."""
+
+    async def find_cheapest_route(
+        self,
+        token: str,
+        amount: Decimal,
+        destination: str,
+        source_chains: Optional[List[str]] = None,
+    ) -> List[ChainRoute]:
+        """Find and rank all possible routes."""
+
+    async def get_gas_prices(self) -> Dict[str, GasEstimate]:
+        """Get current gas estimates for all chains."""
+```
+
+### Data Classes
+
+```python
+@dataclass
+class GasEstimate:
+    chain: str
+    gas_price_gwei: Decimal
+    estimated_gas_units: int
+    estimated_cost_usd: Decimal
+    estimated_time_seconds: int
+    congestion_level: str  # "low", "medium", "high"
+
+@dataclass
+class ChainRoute:
+    source_chain: str
+    destination_chain: Optional[str]
+    token: str
+    estimated_gas_cost_usd: Decimal
+    estimated_total_cost_usd: Decimal
+    estimated_time_seconds: int
+    recommended: bool
+```
+
+---
+
+## Example: Complete Demo
+
+Run the full gas optimizer demo:
+
+```bash
+cd workspace/source
+python examples/gas_optimizer_demo.py
+```
+
+**Demo includes** (`examples/gas_optimizer_demo.py`):
+1. Gas estimation for all chains (lines 15-40)
+2. Route finding and ranking (lines 42-66)
+3. Real-time price monitoring (lines 69-90)
+4. Cache behavior demonstration (lines 93-117)
+
+**Expected output**: See cost comparisons and route recommendations across all supported chains.
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Supported Chains" icon="link" href="/blockchain/supported-chains">
+    Chain configurations and RPC endpoints
+  </Card>
+  <Card title="Supported Tokens" icon="coins" href="/blockchain/supported-tokens">
+    Token availability per chain
+  </Card>
+  <Card title="Smart Contracts" icon="file-contract" href="/blockchain/smart-contracts">
+    Policy enforcement and batch transactions
+  </Card>
+</CardGroup>

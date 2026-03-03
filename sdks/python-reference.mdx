@@ -1,0 +1,761 @@
+---
+title: Python SDK Reference
+description: Complete API reference for the Sardis Python SDK
+---
+
+# Python SDK Reference
+
+Complete API reference for `sardis-sdk` Python package.
+
+## Installation
+
+```bash
+pip install sardis-sdk
+```
+
+## Client Classes
+
+### `SardisClient`
+
+Synchronous client for Sardis API.
+
+```python
+from sardis_sdk import SardisClient
+
+client = SardisClient(
+    api_key: str,
+    base_url: str = "https://api.sardis.sh",
+    retry: RetryConfig | None = None,
+    timeout: TimeoutConfig | None = None,
+    pool: PoolConfig | None = None,
+    log_level: LogLevel = LogLevel.BASIC,
+)
+```
+
+**Parameters:**
+- `api_key` (str): Your Sardis API key
+- `base_url` (str, optional): API base URL
+- `retry` (RetryConfig, optional): Retry configuration
+- `timeout` (TimeoutConfig, optional): Timeout configuration
+- `pool` (PoolConfig, optional): Connection pool configuration
+- `log_level` (LogLevel, optional): Request/response logging level
+
+**Methods:**
+- `close()` - Close the client and cleanup resources
+
+**Context Manager:**
+```python
+with SardisClient(api_key="...") as client:
+    agents = client.agents.list()
+```
+
+### `AsyncSardisClient`
+
+Asynchronous client for Sardis API (recommended for production).
+
+```python
+from sardis_sdk import AsyncSardisClient
+
+client = AsyncSardisClient(
+    api_key: str,
+    base_url: str = "https://api.sardis.sh",
+    retry: RetryConfig | None = None,
+    timeout: TimeoutConfig | None = None,
+    pool: PoolConfig | None = None,
+    log_level: LogLevel = LogLevel.BASIC,
+)
+```
+
+**Parameters:** Same as `SardisClient`
+
+**Methods:**
+- `async close()` - Close the client and cleanup resources
+
+**Context Manager:**
+```python
+async with AsyncSardisClient(api_key="...") as client:
+    agents = await client.agents.list()
+```
+
+## Configuration Classes
+
+### `RetryConfig`
+
+```python
+from sardis_sdk import RetryConfig
+
+config = RetryConfig(
+    max_retries: int = 3,
+    initial_delay: float = 0.5,
+    max_delay: float = 30.0,
+    exponential_base: float = 2.0,
+    jitter: bool = True,
+    retry_on_status: tuple[int, ...] = (429, 500, 502, 503, 504),
+)
+```
+
+### `TimeoutConfig`
+
+```python
+from sardis_sdk import TimeoutConfig
+
+config = TimeoutConfig(
+    connect: float = 10.0,  # Connection timeout in seconds
+    read: float = 30.0,     # Read timeout in seconds
+    write: float = 30.0,    # Write timeout in seconds
+    pool: float = 10.0,     # Pool timeout in seconds
+)
+```
+
+### `PoolConfig`
+
+```python
+from sardis_sdk import PoolConfig
+
+config = PoolConfig(
+    max_connections: int = 100,
+    max_keepalive_connections: int = 20,
+    keepalive_expiry: float = 30.0,
+)
+```
+
+## Resource Classes
+
+### Agents Resource
+
+#### `client.agents.create()`
+
+```python
+agent = client.agents.create(
+    name: str,
+    description: str | None = None,
+    spending_limits: dict[str, Any] | None = None,
+    policy: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+    timeout: float | TimeoutConfig | None = None,
+) -> Agent
+```
+
+#### `client.agents.get()`
+
+```python
+agent = client.agents.get(
+    agent_id: str,
+    timeout: float | TimeoutConfig | None = None,
+) -> Agent
+```
+
+#### `client.agents.list()`
+
+```python
+agents = client.agents.list(
+    limit: int = 100,
+    offset: int | None = None,
+    timeout: float | TimeoutConfig | None = None,
+) -> list[Agent]
+```
+
+#### `client.agents.update()`
+
+```python
+agent = client.agents.update(
+    agent_id: str,
+    name: str | None = None,
+    description: str | None = None,
+    spending_limits: dict[str, Any] | None = None,
+    policy: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+    timeout: float | TimeoutConfig | None = None,
+) -> Agent
+```
+
+#### `client.agents.delete()`
+
+```python
+client.agents.delete(
+    agent_id: str,
+    timeout: float | TimeoutConfig | None = None,
+) -> None
+```
+
+### Wallets Resource
+
+#### `client.wallets.create()`
+
+```python
+wallet = client.wallets.create(
+    agent_id: str,
+    mpc_provider: str = "turnkey",
+    account_type: str = "mpc_v1",
+    currency: str = "USDC",
+    limit_per_tx: Decimal | None = None,
+    limit_total: Decimal | None = None,
+    metadata: dict[str, Any] | None = None,
+    timeout: float | TimeoutConfig | None = None,
+) -> Wallet
+```
+
+#### `client.wallets.get()`
+
+```python
+wallet = client.wallets.get(
+    wallet_id: str,
+    timeout: float | TimeoutConfig | None = None,
+) -> Wallet
+```
+
+#### `client.wallets.list()`
+
+```python
+wallets = client.wallets.list(
+    agent_id: str | None = None,
+    limit: int = 100,
+    offset: int | None = None,
+    timeout: float | TimeoutConfig | None = None,
+) -> list[Wallet]
+```
+
+#### `client.wallets.get_balance()`
+
+```python
+balance = client.wallets.get_balance(
+    wallet_id: str,
+    chain: str = "base",
+    token: str = "USDC",
+    timeout: float | TimeoutConfig | None = None,
+) -> WalletBalance
+```
+
+#### `client.wallets.transfer()`
+
+```python
+tx = client.wallets.transfer(
+    wallet_id: str,
+    destination: str,
+    amount: Decimal,
+    token: str = "USDC",
+    chain: str = "base",
+    memo: str | None = None,
+    timeout: float | TimeoutConfig | None = None,
+) -> WalletTransferResponse
+```
+
+### Payments Resource
+
+#### `client.payments.execute_mandate()`
+
+```python
+result = client.payments.execute_mandate(
+    mandate: dict[str, Any],
+    wallet_id: str | None = None,
+    timeout: float | TimeoutConfig | None = None,
+) -> ExecutePaymentResponse
+```
+
+#### `client.payments.execute_ap2()`
+
+```python
+result = client.payments.execute_ap2(
+    bundle: dict[str, Any],
+    wallet_id: str | None = None,
+    timeout: float | TimeoutConfig | None = None,
+) -> ExecuteAP2Response
+```
+
+#### `client.payments.get()`
+
+```python
+payment = client.payments.get(
+    payment_id: str,
+    timeout: float | TimeoutConfig | None = None,
+) -> Payment
+```
+
+#### `client.payments.list()`
+
+```python
+payments = client.payments.list(
+    wallet_id: str | None = None,
+    status: str | None = None,
+    limit: int = 100,
+    offset: int | None = None,
+    timeout: float | TimeoutConfig | None = None,
+) -> list[Payment]
+```
+
+### Holds Resource
+
+#### `client.holds.create()`
+
+```python
+hold = client.holds.create(
+    wallet_id: str,
+    amount: Decimal,
+    token: str = "USDC",
+    expires_in: int | None = None,
+    metadata: dict[str, Any] | None = None,
+    timeout: float | TimeoutConfig | None = None,
+) -> Hold
+```
+
+#### `client.holds.capture()`
+
+```python
+capture = client.holds.capture(
+    hold_id: str,
+    amount: Decimal | None = None,
+    memo: str | None = None,
+    timeout: float | TimeoutConfig | None = None,
+) -> CreateHoldResponse
+```
+
+#### `client.holds.void()`
+
+```python
+client.holds.void(
+    hold_id: str,
+    timeout: float | TimeoutConfig | None = None,
+) -> None
+```
+
+#### `client.holds.get()`
+
+```python
+hold = client.holds.get(
+    hold_id: str,
+    timeout: float | TimeoutConfig | None = None,
+) -> Hold
+```
+
+#### `client.holds.list()`
+
+```python
+holds = client.holds.list(
+    wallet_id: str | None = None,
+    status: str | None = None,
+    limit: int = 100,
+    offset: int | None = None,
+    timeout: float | TimeoutConfig | None = None,
+) -> list[Hold]
+```
+
+### Groups Resource
+
+#### `client.groups.create()`
+
+```python
+group = client.groups.create(
+    name: str,
+    budget: dict[str, str],
+    merchant_policy: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+    timeout: float | TimeoutConfig | None = None,
+) -> Group
+```
+
+#### `client.groups.get()`
+
+```python
+group = client.groups.get(
+    group_id: str,
+    timeout: float | TimeoutConfig | None = None,
+) -> Group
+```
+
+#### `client.groups.add_agent()`
+
+```python
+client.groups.add_agent(
+    group_id: str,
+    agent_id: str,
+    timeout: float | TimeoutConfig | None = None,
+) -> None
+```
+
+#### `client.groups.remove_agent()`
+
+```python
+client.groups.remove_agent(
+    group_id: str,
+    agent_id: str,
+    timeout: float | TimeoutConfig | None = None,
+) -> None
+```
+
+#### `client.groups.get_spending()`
+
+```python
+spending = client.groups.get_spending(
+    group_id: str,
+    timeout: float | TimeoutConfig | None = None,
+) -> dict[str, Any]
+```
+
+### Policies Resource
+
+#### `client.policies.parse_nl()`
+
+```python
+parsed = client.policies.parse_nl(
+    policy_text: str,
+    timeout: float | TimeoutConfig | None = None,
+) -> ParsedPolicy
+```
+
+#### `client.policies.check()`
+
+```python
+check = client.policies.check(
+    wallet_id: str,
+    amount: Decimal,
+    recipient: str,
+    timeout: float | TimeoutConfig | None = None,
+) -> PolicyCheckResponse
+```
+
+#### `client.policies.preview()`
+
+```python
+preview = client.policies.preview(
+    policy: dict[str, Any],
+    timeout: float | TimeoutConfig | None = None,
+) -> PolicyPreviewResponse
+```
+
+### Cards Resource
+
+#### `client.cards.create()`
+
+```python
+card = client.cards.create(
+    wallet_id: str,
+    card_type: str = "virtual",
+    spending_limits: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+    timeout: float | TimeoutConfig | None = None,
+) -> Card
+```
+
+#### `client.cards.get()`
+
+```python
+card = client.cards.get(
+    card_id: str,
+    timeout: float | TimeoutConfig | None = None,
+) -> Card
+```
+
+#### `client.cards.list()`
+
+```python
+cards = client.cards.list(
+    wallet_id: str | None = None,
+    limit: int = 100,
+    offset: int | None = None,
+    timeout: float | TimeoutConfig | None = None,
+) -> list[Card]
+```
+
+### Treasury Resource
+
+#### `client.treasury.get_account()`
+
+```python
+account = client.treasury.get_account(
+    account_id: str,
+    timeout: float | TimeoutConfig | None = None,
+) -> FinancialAccount
+```
+
+#### `client.treasury.get_balance()`
+
+```python
+balance = client.treasury.get_balance(
+    account_id: str,
+    timeout: float | TimeoutConfig | None = None,
+) -> TreasuryBalance
+```
+
+#### `client.treasury.create_payment()`
+
+```python
+payment = client.treasury.create_payment(
+    account_id: str,
+    amount: Decimal,
+    destination: str,
+    method: str = "ach",
+    timeout: float | TimeoutConfig | None = None,
+) -> TreasuryPaymentResponse
+```
+
+### Webhooks Resource
+
+#### `client.webhooks.create()`
+
+```python
+webhook = client.webhooks.create(
+    url: str,
+    events: list[str],
+    secret: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    timeout: float | TimeoutConfig | None = None,
+) -> Webhook
+```
+
+#### `client.webhooks.get()`
+
+```python
+webhook = client.webhooks.get(
+    webhook_id: str,
+    timeout: float | TimeoutConfig | None = None,
+) -> Webhook
+```
+
+#### `client.webhooks.list()`
+
+```python
+webhooks = client.webhooks.list(
+    limit: int = 100,
+    offset: int | None = None,
+    timeout: float | TimeoutConfig | None = None,
+) -> list[Webhook]
+```
+
+### Ledger Resource
+
+#### `client.ledger.list()`
+
+```python
+entries = client.ledger.list(
+    wallet_id: str | None = None,
+    group_id: str | None = None,
+    limit: int = 100,
+    offset: int | None = None,
+    timeout: float | TimeoutConfig | None = None,
+) -> list[LedgerEntry]
+```
+
+## Model Classes
+
+### `Agent`
+
+```python
+class Agent(SardisModel):
+    agent_id: str
+    name: str
+    description: str | None
+    spending_limits: dict[str, Any] | None
+    policy: dict[str, Any] | None
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+    metadata: dict[str, Any] | None
+```
+
+### `Wallet`
+
+```python
+class Wallet(SardisModel):
+    wallet_id: str
+    agent_id: str
+    mpc_provider: str
+    account_type: str
+    addresses: dict[str, str]
+    currency: str
+    limit_per_tx: Decimal
+    limit_total: Decimal
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+```
+
+### `WalletBalance`
+
+```python
+class WalletBalance(SardisModel):
+    wallet_id: str
+    chain: str
+    token: str
+    balance: Decimal
+    address: str
+```
+
+### `Payment`
+
+```python
+class Payment(SardisModel):
+    payment_id: str
+    wallet_id: str
+    amount: Decimal
+    token: str
+    status: PaymentStatus
+    tx_hash: str | None
+    created_at: datetime
+    updated_at: datetime
+```
+
+### `Hold`
+
+```python
+class Hold(SardisModel):
+    hold_id: str
+    wallet_id: str
+    amount: Decimal
+    token: str
+    status: HoldStatus
+    expires_at: datetime | None
+    captured_amount: Decimal | None
+    created_at: datetime
+    updated_at: datetime
+```
+
+### `Card`
+
+```python
+class Card(SardisModel):
+    card_id: str
+    wallet_id: str
+    card_type: str
+    last_four: str
+    status: str
+    spending_limits: dict[str, Any] | None
+    created_at: datetime
+    updated_at: datetime
+```
+
+## Enums
+
+### `Chain`
+
+```python
+from sardis_sdk import Chain
+
+Chain.BASE          # "base"
+Chain.ETHEREUM      # "ethereum"
+Chain.POLYGON       # "polygon"
+Chain.ARBITRUM      # "arbitrum"
+Chain.OPTIMISM      # "optimism"
+Chain.BASE_SEPOLIA  # "base_sepolia"
+```
+
+### `Token`
+
+```python
+from sardis_sdk import Token
+
+Token.USDC   # "USDC"
+Token.USDT   # "USDT"
+Token.EURC   # "EURC"
+Token.PYUSD  # "PYUSD"
+```
+
+### `MPCProvider`
+
+```python
+from sardis_sdk import MPCProvider
+
+MPCProvider.TURNKEY     # "turnkey"
+MPCProvider.FIREBLOCKS  # "fireblocks"
+MPCProvider.LOCAL       # "local"
+```
+
+### `PaymentStatus`
+
+```python
+from sardis_sdk import PaymentStatus
+
+PaymentStatus.PENDING
+PaymentStatus.PROCESSING
+PaymentStatus.COMPLETED
+PaymentStatus.FAILED
+PaymentStatus.CANCELLED
+```
+
+### `HoldStatus`
+
+```python
+from sardis_sdk import HoldStatus
+
+HoldStatus.ACTIVE
+HoldStatus.CAPTURED
+HoldStatus.VOIDED
+HoldStatus.EXPIRED
+```
+
+## Pagination
+
+### `Page`
+
+```python
+from sardis_sdk import Page
+
+page = client.agents.list_page(limit=100, offset=0)
+
+for agent in page.items:
+    print(agent.name)
+
+if page.has_more:
+    next_page = client.agents.list_page(limit=100, offset=page.next_offset)
+```
+
+### `AsyncPaginator`
+
+```python
+from sardis_sdk import AsyncPaginator
+
+async for agent in AsyncPaginator(
+    client.agents.list,
+    limit=100
+):
+    print(agent.name)
+```
+
+## Bulk Operations
+
+### `bulk_execute_sync()`
+
+```python
+from sardis_sdk import bulk_execute_sync, BulkConfig
+
+operations = [
+    ("wallets.get", {"wallet_id": f"wallet_{i}"})
+    for i in range(100)
+]
+
+result = bulk_execute_sync(
+    client,
+    operations,
+    config=BulkConfig(
+        max_concurrency=10,
+        stop_on_error=False,
+    )
+)
+
+print(f"Success: {result.summary.success_count}")
+print(f"Failed: {result.summary.failure_count}")
+```
+
+### `bulk_execute_async()`
+
+```python
+from sardis_sdk import bulk_execute_async, BulkConfig
+
+result = await bulk_execute_async(
+    client,
+    operations,
+    config=BulkConfig(
+        max_concurrency=10,
+        stop_on_error=False,
+    )
+)
+```
+
+## Error Classes
+
+See [Error Handling](/sdks/error-handling) for complete error reference.
+
+## See Also
+
+- [Python SDK Guide](/sdks/python)
+- [Error Handling](/sdks/error-handling)
+- [Async Patterns](/sdks/async-patterns)

@@ -1,0 +1,577 @@
+---
+title: 'Anthropic Claude Agent SDK'
+description: 'Build Claude agents with Sardis payment tools using the Agent SDK'
+icon: 'brain'
+---
+
+## Overview
+
+The **sardis-agent-sdk** package provides a high-level toolkit for integrating Sardis payments into Anthropic Claude agents. It handles tool definitions, result parsing, and the full agent loop automatically.
+
+## When to Use Anthropic
+
+- **Claude-Specific Agents**: Build with Claude Sonnet, Opus, or Haiku
+- **Tool Use**: Claude's native function calling
+- **Agent SDK**: Use Anthropic's official agent framework
+- **Long Context**: Leverage Claude's 200K+ token context window
+- **Safe Reasoning**: Claude's strong safety and alignment properties
+
+## Installation
+
+```bash
+pip install sardis-agent-sdk anthropic
+```
+
+<Tip>
+  Requires `anthropic>=0.18.0` and Python 3.9+
+</Tip>
+
+## Quick Start
+
+<CodeGroup>
+
+```python Basic Usage
+import anthropic
+from sardis import SardisClient
+from sardis_agent_sdk import SardisToolkit
+
+# Initialize
+sardis = SardisClient(api_key="sk_live_...")
+wallet = sardis.wallets.create(
+    name="claude-agent",
+    chain="base",
+    currency="USDC",
+)
+
+# Create toolkit
+toolkit = SardisToolkit(
+    client=sardis,
+    wallet_id=wallet.wallet_id,
+)
+
+# Get tools for Claude
+tools = toolkit.get_tools()
+
+# Create Claude client
+claude = anthropic.Anthropic()
+
+# Simple conversation
+messages = [
+    {"role": "user", "content": "Pay $25 to OpenAI for API credits"}
+]
+
+response = claude.messages.create(
+    model="claude-sonnet-4-5-20250929",
+    max_tokens=4096,
+    tools=tools,
+    messages=messages,
+)
+
+# Handle tool calls
+for block in response.content:
+    if block.type == "tool_use":
+        result = toolkit.handle_tool_call(block)
+        print(result)
+```
+
+```python Automated Agent Loop
+import anthropic
+from sardis import SardisClient
+from sardis_agent_sdk import SardisToolkit
+
+sardis = SardisClient(api_key="sk_live_...")
+
+# Create agent + wallet
+agent = sardis.agents.create(
+    name="claude-procurement-agent",
+    description="Claude-powered procurement agent",
+)
+wallet = sardis.wallets.create(
+    agent_id=agent.agent_id,
+    chain="base",
+    currency="USDC",
+)
+
+# Create toolkit
+toolkit = SardisToolkit(
+    client=sardis,
+    wallet_id=wallet.wallet_id,
+)
+
+# Run automated agent loop
+claude = anthropic.Anthropic()
+
+result = toolkit.run_agent_loop(
+    client=claude,
+    model="claude-sonnet-4-5-20250929",
+    system_prompt=(
+        "You are a procurement agent with a Sardis wallet. "
+        "You help purchase software tools and API credits. "
+        "Always check the balance before making payments, and "
+        "explain your reasoning clearly."
+    ),
+    user_message=(
+        "I need to purchase $30 of OpenAI API credits. "
+        "Check my balance and policy first, then make the payment."
+    ),
+    max_turns=5,
+)
+
+print(f"Agent response: {result['response']}")
+print(f"Tool calls made: {len(result['tool_calls'])}")
+print(f"Turns taken: {result['turns']}")
+
+for i, call in enumerate(result["tool_calls"], 1):
+    print(f"\nTool call {i}: {call['tool_name']}")
+    print(f"  Input: {call['tool_input']}")
+    print(f"  Result: {call['result']}")
+```
+
+```python Manual Agent Loop
+import anthropic
+from sardis import SardisClient
+from sardis_agent_sdk import SardisToolkit
+
+sardis = SardisClient(api_key="sk_live_...")
+wallet = sardis.wallets.create(name="agent", chain="base")
+
+toolkit = SardisToolkit(
+    client=sardis,
+    wallet_id=wallet.wallet_id,
+)
+
+claude = anthropic.Anthropic()
+tools = toolkit.get_tools()
+
+messages = [
+    {
+        "role": "user",
+        "content": "Check my balance and pay $50 to anthropic.com",
+    }
+]
+
+system = (
+    "You are a helpful assistant with access to a Sardis payment wallet. "
+    "Use the available tools to check balances, verify policies, and "
+    "execute payments when asked."
+)
+
+for turn in range(5):
+    response = claude.messages.create(
+        model="claude-sonnet-4-5-20250929",
+        max_tokens=2048,
+        system=system,
+        tools=tools,
+        messages=messages,
+    )
+    
+    # Check for tool use
+    tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
+    
+    if not tool_use_blocks:
+        # Final text response
+        for block in response.content:
+            if block.type == "text":
+                print(f"Claude: {block.text}")
+        break
+    
+    # Append assistant message
+    messages.append({"role": "assistant", "content": response.content})
+    
+    # Process tool calls
+    tool_results = []
+    for block in tool_use_blocks:
+        print(f"  Tool: {block.name}({block.input})")
+        result = toolkit.handle_tool_call(block)
+        tool_results.append(result)
+        print(f"  Result: {result['content']}\n")
+    
+    # Send tool results back
+    messages.append({"role": "user", "content": tool_results})
+```
+
+</CodeGroup>
+
+## Available Tools
+
+The toolkit provides Claude-compatible tool definitions:
+
+<CardGroup cols={2}>
+  <Card title="sardis_pay" icon="dollar-sign">
+    Execute payment with policy enforcement
+  </Card>
+  <Card title="sardis_check_balance" icon="wallet">
+    Check wallet balance and limits
+  </Card>
+  <Card title="sardis_check_policy" icon="shield-check">
+    Dry-run policy validation
+  </Card>
+  <Card title="sardis_set_policy" icon="sliders">
+    Update spending policy
+  </Card>
+  <Card title="sardis_list_transactions" icon="list">
+    View transaction history
+  </Card>
+</CardGroup>
+
+## SardisToolkit
+
+The main entry point for Claude integration:
+
+```python
+from sardis_agent_sdk import SardisToolkit
+
+toolkit = SardisToolkit(
+    client=sardis_client,
+    wallet_id="wallet_abc123",
+    read_only=False,  # Set True for observer agents
+)
+
+# Get tool definitions
+tools = toolkit.get_tools()
+
+# Handle tool calls
+for block in response.content:
+    if block.type == "tool_use":
+        result = toolkit.handle_tool_call(block)
+        # result is a dict with {"type": "tool_result", "tool_use_id": "...", "content": "..."}
+```
+
+## Automated Agent Loop
+
+Use `run_agent_loop` for fully managed conversations:
+
+```python
+result = toolkit.run_agent_loop(
+    client=anthropic.Anthropic(),
+    model="claude-sonnet-4-5-20250929",
+    system_prompt="You are a procurement agent...",
+    user_message="Purchase $30 of OpenAI API credits",
+    max_turns=10,
+    max_tokens=4096,
+)
+
+# Returns:
+# {
+#   "response": "Final text response",
+#   "messages": [...],  # Full message history
+#   "tool_calls": [...],  # All tool calls made
+#   "turns": 3  # Number of turns taken
+# }
+```
+
+## Read-Only Mode
+
+Create observer agents that can't make payments:
+
+```python
+toolkit = SardisToolkit(
+    client=sardis,
+    wallet_id=wallet.wallet_id,
+    read_only=True,  # Only balance, policy checks, and transaction history
+)
+
+result = toolkit.run_agent_loop(
+    client=claude,
+    model="claude-sonnet-4-5-20250929",
+    system_prompt=(
+        "You are a financial auditor. You can check balances and "
+        "review transaction history, but you cannot make payments. "
+        "Analyze the wallet's spending patterns and report any concerns."
+    ),
+    user_message="Review this wallet's balance and recent transactions. Flag anything unusual.",
+    max_turns=3,
+)
+```
+
+## Example: Multi-Turn Procurement
+
+```python examples/anthropic_agent_sdk.py
+import os
+import anthropic
+from sardis import SardisClient
+from sardis_agent_sdk import SardisToolkit
+
+# Initialize
+sardis = SardisClient(api_key=os.environ["SARDIS_API_KEY"])
+
+# Create agent and wallet
+agent = sardis.agents.create(
+    name="claude-procurement-agent",
+    description="Claude-powered procurement agent with Sardis wallet",
+)
+wallet = sardis.wallets.create(
+    agent_id=agent.agent_id,
+    chain="base_sepolia",
+    currency="USDC",
+)
+
+# Create toolkit
+toolkit = SardisToolkit(
+    client=sardis,
+    wallet_id=wallet.wallet_id,
+)
+
+# Run automated agent loop
+claude = anthropic.Anthropic()
+
+result = toolkit.run_agent_loop(
+    client=claude,
+    model="claude-sonnet-4-5-20250929",
+    system_prompt=(
+        "You are a procurement agent with a Sardis wallet. "
+        "You help purchase software tools and API credits. "
+        "Always check the balance before making payments, and "
+        "explain your reasoning clearly."
+    ),
+    user_message=(
+        "I need to purchase $30 of OpenAI API credits. "
+        "Check my balance and policy first, then make the payment."
+    ),
+    max_turns=5,
+)
+
+print(f"Agent response: {result['response']}")
+print(f"Tool calls made: {len(result['tool_calls'])}")
+print(f"Turns taken: {result['turns']}")
+
+for i, call in enumerate(result["tool_calls"], 1):
+    print(f"\nTool call {i}: {call['tool_name']}")
+    print(f"  Input: {call['tool_input']}")
+    print(f"  Result: {call['result']}")
+```
+
+## Claude Models
+
+Supported Claude models:
+
+<Tabs>
+  <Tab title="Claude Sonnet">
+    ```python
+    # Best balance of speed and capability
+    model="claude-sonnet-4-5-20250929"
+    ```
+  </Tab>
+  <Tab title="Claude Opus">
+    ```python
+    # Most capable, best for complex reasoning
+    model="claude-opus-4-20250514"
+    ```
+  </Tab>
+  <Tab title="Claude Haiku">
+    ```python
+    # Fastest, best for simple tasks
+    model="claude-haiku-3-5-20241022"
+    ```
+  </Tab>
+</Tabs>
+
+## Tool Use Patterns
+
+### Single Tool Call
+
+```python
+messages = [{"role": "user", "content": "Pay $25 to OpenAI"}]
+
+response = claude.messages.create(
+    model="claude-sonnet-4-5-20250929",
+    max_tokens=2048,
+    tools=tools,
+    messages=messages,
+)
+
+# Claude will call sardis_pay with appropriate arguments
+```
+
+### Multiple Tool Calls
+
+```python
+messages = [{
+    "role": "user",
+    "content": "Check my balance, then pay $50 to AWS if I have enough"
+}]
+
+response = claude.messages.create(
+    model="claude-sonnet-4-5-20250929",
+    max_tokens=2048,
+    tools=tools,
+    messages=messages,
+)
+
+# Claude will:
+# 1. Call sardis_check_balance
+# 2. Receive result
+# 3. Call sardis_pay if balance is sufficient
+```
+
+### Conditional Logic
+
+```python
+messages = [{
+    "role": "user",
+    "content": (
+        "Check the policy for a $200 payment to aws.amazon.com. "
+        "If allowed, execute the payment. If not, explain why."
+    )
+}]
+
+# Claude will:
+# 1. Call sardis_check_policy
+# 2. If allowed: call sardis_pay
+# 3. If blocked: explain the policy violation
+```
+
+## Error Handling
+
+```python
+try:
+    result = toolkit.run_agent_loop(
+        client=claude,
+        model="claude-sonnet-4-5-20250929",
+        system_prompt="...",
+        user_message="Pay $1000 to merchant_xyz",
+    )
+    print(result["response"])
+except anthropic.APIError as e:
+    print(f"Claude API error: {e}")
+except Exception as e:
+    print(f"Unexpected error: {e}")
+```
+
+## Streaming Responses
+
+For real-time streaming:
+
+```python
+with claude.messages.stream(
+    model="claude-sonnet-4-5-20250929",
+    max_tokens=2048,
+    tools=tools,
+    messages=messages,
+) as stream:
+    for text in stream.text_stream:
+        print(text, end="", flush=True)
+    
+    # Get final message
+    message = stream.get_final_message()
+    
+    # Handle tool calls
+    for block in message.content:
+        if block.type == "tool_use":
+            result = toolkit.handle_tool_call(block)
+            print(f"\nTool result: {result['content']}")
+```
+
+## Best Practices
+
+### 1. Use System Prompts
+
+Provide clear instructions:
+
+```python
+system = (
+    "You are a procurement agent with a Sardis wallet. "
+    "Before making any payment:"
+    "1. Check wallet balance using sardis_check_balance"
+    "2. Validate against policy using sardis_check_policy"
+    "3. Execute payment with sardis_pay"
+    "4. Confirm with transaction ID"
+)
+```
+
+### 2. Handle All Tool Results
+
+```python
+for block in response.content:
+    if block.type == "tool_use":
+        result = toolkit.handle_tool_call(block)
+        messages.append({"role": "user", "content": [result]})
+```
+
+### 3. Set Reasonable Max Turns
+
+```python
+# Prevent infinite loops
+result = toolkit.run_agent_loop(
+    client=claude,
+    model="claude-sonnet-4-5-20250929",
+    system_prompt="...",
+    user_message="...",
+    max_turns=10,  # Reasonable limit
+)
+```
+
+### 4. Use Read-Only for Auditors
+
+```python
+author_toolkit = SardisToolkit(
+    client=sardis,
+    wallet_id=wallet.wallet_id,
+    read_only=True,  # Cannot make payments
+)
+```
+
+## Troubleshooting
+
+### Tools Not Called
+
+```python
+# Claude responds without calling tools
+```
+
+Make request more explicit:
+
+```python
+messages = [{
+    "role": "user",
+    "content": "Use the sardis_pay tool to pay $25 to OpenAI"
+}]
+```
+
+### Invalid Tool Schema
+
+```python
+APIError: Invalid tool schema
+```
+
+Ensure toolkit is initialized correctly:
+
+```python
+toolkit = SardisToolkit(client=sardis, wallet_id=wallet.wallet_id)
+tools = toolkit.get_tools()  # Don't modify these
+```
+
+### Max Turns Exceeded
+
+```python
+result["response"] == "(max turns reached without final response)"
+```
+
+Increase `max_turns` or simplify the task:
+
+```python
+result = toolkit.run_agent_loop(
+    client=claude,
+    model="claude-sonnet-4-5-20250929",
+    system_prompt="...",
+    user_message="...",
+    max_turns=20,  # Increased
+)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="OpenAI Integration" icon="robot" href="/integrations/openai">
+    Use function calling with GPT-4o
+  </Card>
+  <Card title="Vercel AI SDK" icon="triangle" href="/integrations/vercel-ai">
+    Build streaming payment agents
+  </Card>
+  <Card title="Policy Engine" icon="shield" href="/core-concepts/policy-engine">
+    Understand spending policy enforcement
+  </Card>
+  <Card title="API Reference" icon="book" href="/api-reference/python-sdk">
+    Full Python SDK documentation
+  </Card>
+</CardGroup>

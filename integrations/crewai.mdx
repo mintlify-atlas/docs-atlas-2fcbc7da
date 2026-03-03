@@ -1,0 +1,710 @@
+---
+title: 'CrewAI'
+description: 'Build multi-agent teams with shared budgets and policy-enforced payments'
+icon: 'users'
+---
+
+## Overview
+
+The **sardis-crewai** package enables CrewAI multi-agent teams to share Sardis wallets with group budget enforcement. Perfect for collaborative procurement workflows where multiple agents coordinate on purchasing decisions.
+
+## When to Use CrewAI
+
+- **Multi-Agent Workflows**: Coordinate multiple specialized agents (researcher, buyer, auditor)
+- **Role-Based Procurement**: Assign specific roles (analyst, purchaser, reviewer)
+- **Group Budgets**: Enforce shared spending limits across all agents
+- **Sequential Tasks**: Multi-step procurement workflows with hand-offs
+- **Collaborative Decision-Making**: Agents review each other's work
+
+## Installation
+
+```bash
+pip install sardis-crewai crewai
+```
+
+<Tip>
+  Requires Python 3.10+ and `crewai>=0.20.0`
+</Tip>
+
+## Quick Start
+
+<CodeGroup>
+
+```python Basic Setup
+from crewai import Agent, Crew, Task
+from sardis import SardisClient
+from sardis_crewai import create_sardis_tools
+
+# Initialize Sardis
+sardis = SardisClient(api_key="sk_live_...")
+
+# Create group budget
+group = sardis.groups.create(
+    name="engineering-procurement",
+    budget={
+        "per_transaction": "200.00",
+        "daily": "1000.00",
+        "monthly": "30000.00",
+    },
+)
+
+# Create agent + wallet
+agent = sardis.agents.create(name="buyer-agent")
+wallet = sardis.wallets.create(
+    agent_id=agent.agent_id,
+    chain="base",
+    currency="USDC",
+)
+
+# Add to group
+sardis.groups.add_agent(group.group_id, agent.agent_id)
+
+# Create CrewAI agent with Sardis tools
+tools = create_sardis_tools(client=sardis, wallet_id=wallet.wallet_id)
+
+buyer = Agent(
+    role="Procurement Specialist",
+    goal="Purchase approved software and API credits",
+    tools=tools,
+    verbose=True,
+)
+
+task = Task(
+    description="Purchase $50 of OpenAI API credits",
+    expected_output="Payment confirmation with transaction ID",
+    agent=buyer,
+)
+
+crew = Crew(agents=[buyer], tasks=[task])
+result = crew.kickoff()
+print(result)
+```
+
+```python Full Multi-Agent Example
+import os
+from decimal import Decimal
+from crewai import Agent, Crew, Task
+from sardis import SardisClient
+from sardis_crewai import create_sardis_tools
+
+# Initialize Sardis
+sardis = SardisClient(api_key=os.environ["SARDIS_API_KEY"])
+
+# Create shared group budget
+group = sardis.groups.create(
+    name="engineering-procurement",
+    budget={
+        "per_transaction": "200.00",
+        "daily": "1000.00",
+        "monthly": "30000.00",
+    },
+    merchant_policy={
+        "blocked_categories": ["gambling", "entertainment"],
+    },
+)
+
+# Create three agents with different roles
+researcher_agent = sardis.agents.create(
+    name="researcher-agent",
+    description="Finds tools and estimates costs",
+)
+researcher_wallet = sardis.wallets.create(
+    agent_id=researcher_agent.agent_id,
+    chain="base_sepolia",
+    currency="USDC",
+    limit_per_tx=Decimal("50.00"),
+    limit_total=Decimal("500.00"),
+)
+
+purchaser_agent = sardis.agents.create(
+    name="purchaser-agent",
+    description="Executes approved purchases",
+)
+purchaser_wallet = sardis.wallets.create(
+    agent_id=purchaser_agent.agent_id,
+    chain="base_sepolia",
+    currency="USDC",
+    limit_per_tx=Decimal("200.00"),
+    limit_total=Decimal("1000.00"),
+)
+
+auditor_agent = sardis.agents.create(
+    name="auditor-agent",
+    description="Reviews spending and compliance",
+)
+auditor_wallet = sardis.wallets.create(
+    agent_id=auditor_agent.agent_id,
+    chain="base_sepolia",
+    currency="USDC",
+    limit_per_tx=Decimal("0.00"),  # Read-only
+    limit_total=Decimal("0.00"),
+)
+
+# Add all to group
+sardis.groups.add_agent(group.group_id, researcher_agent.agent_id)
+sardis.groups.add_agent(group.group_id, purchaser_agent.agent_id)
+sardis.groups.add_agent(group.group_id, auditor_agent.agent_id)
+
+# Create CrewAI agents
+researcher = Agent(
+    role="Research Analyst",
+    goal="Find the best software tools and API services for the team",
+    backstory=(
+        "You are a technical researcher who evaluates software tools. "
+        "You identify what the team needs and estimate costs before "
+        "recommending purchases."
+    ),
+    tools=create_sardis_tools(
+        client=sardis,
+        wallet_id=researcher_wallet.wallet_id,
+        group_id=group.group_id,
+        read_only=True,  # Can only check budget
+    ),
+    verbose=True,
+)
+
+purchaser = Agent(
+    role="Procurement Specialist",
+    goal="Execute approved purchases within the group budget",
+    backstory=(
+        "You are a procurement specialist with a Sardis wallet. "
+        "You only purchase items that have been researched and justified. "
+        "You always check the group budget before spending."
+    ),
+    tools=create_sardis_tools(
+        client=sardis,
+        wallet_id=purchaser_wallet.wallet_id,
+        group_id=group.group_id,
+    ),
+    verbose=True,
+)
+
+auditor = Agent(
+    role="Financial Auditor",
+    goal="Review all spending for compliance and budget adherence",
+    backstory=(
+        "You are a financial auditor who reviews all team spending. "
+        "You check that purchases align with policy, flag anomalies, "
+        "and produce a summary report."
+    ),
+    tools=create_sardis_tools(
+        client=sardis,
+        wallet_id=auditor_wallet.wallet_id,
+        group_id=group.group_id,
+        read_only=True,
+    ),
+    verbose=True,
+)
+
+# Define tasks
+research_task = Task(
+    description=(
+        "Research and recommend API credits to purchase for the team. "
+        "We need: OpenAI API credits (~$30), Anthropic API credits (~$25), "
+        "and a GitHub Copilot subscription (~$19/month). "
+        "Check the group budget first and provide cost estimates."
+    ),
+    expected_output="A list of recommended purchases with costs and justifications.",
+    agent=researcher,
+)
+
+purchase_task = Task(
+    description=(
+        "Execute the purchases recommended by the researcher. "
+        "Check the group budget before each purchase. "
+        "Pay for each item individually with clear purpose descriptions."
+    ),
+    expected_output="Confirmation of each purchase with transaction details.",
+    agent=purchaser,
+)
+
+audit_task = Task(
+    description=(
+        "Review all purchases made today. Check: "
+        "1) Each purchase has a valid justification, "
+        "2) Spending is within group budget limits, "
+        "3) No policy violations occurred. "
+        "Produce a compliance summary."
+    ),
+    expected_output="An audit report summarizing spending and compliance status.",
+    agent=auditor,
+)
+
+# Execute crew
+crew = Crew(
+    agents=[researcher, purchaser, auditor],
+    tasks=[research_task, purchase_task, audit_task],
+    verbose=True,
+)
+
+print("="*60)
+print("CrewAI Finance Team + Sardis Group Budgets")
+print("="*60)
+print(f"\nGroup: {group.name} ({group.group_id})")
+print(f"Daily budget: $1,000")
+print(f"Agents: researcher, purchaser, auditor\n")
+
+result = crew.kickoff()
+
+print("\n" + "="*60)
+print("CREW RESULT")
+print("="*60)
+print(result)
+```
+
+</CodeGroup>
+
+## Available Tools
+
+The `create_sardis_tools` function returns CrewAI-compatible tools:
+
+<CardGroup cols={2}>
+  <Card title="sardis_pay" icon="dollar-sign">
+    Execute payment with group budget enforcement
+  </Card>
+  <Card title="sardis_check_balance" icon="wallet">
+    Check individual wallet balance
+  </Card>
+  <Card title="sardis_check_policy" icon="shield-check">
+    Validate payment against wallet policy
+  </Card>
+  <Card title="sardis_set_policy" icon="sliders">
+    Update spending policy
+  </Card>
+  <Card title="sardis_group_budget" icon="users">
+    Check shared group budget status
+  </Card>
+</CardGroup>
+
+## Tool Details
+
+### sardis_pay
+
+Execute a payment with group budget enforcement:
+
+```python
+from sardis_crewai import SardisPayTool
+
+pay_tool = SardisPayTool(
+    client=sardis,
+    wallet_id=wallet.wallet_id,
+)
+
+result = pay_tool._run(
+    to="openai.com",
+    amount="25.00",
+    token="USDC",
+    purpose="GPT-4o API credits",
+)
+print(result)
+# Output:
+# Payment successful.
+#   TX ID: tx_abc123
+#   Amount: 25.00 USDC
+#   To: openai.com
+#   Status: confirmed
+#   Group budget remaining: $975
+```
+
+### sardis_check_balance
+
+Check wallet balance:
+
+```python
+from sardis_crewai import SardisCheckBalanceTool
+
+balance_tool = SardisCheckBalanceTool(
+    client=sardis,
+    wallet_id=wallet.wallet_id,
+)
+
+result = balance_tool._run(token="USDC", chain="base")
+print(result)
+# Output:
+# Wallet: wallet_abc123
+#   Balance: 1000.00 USDC
+#   Spent total: 250.00
+#   Limit per tx: 200.00
+#   Total limit: 1000.00
+#   Remaining: 750.00
+```
+
+### sardis_group_budget
+
+Check shared group budget:
+
+```python
+from sardis_crewai import SardisGroupBudgetTool
+
+group_tool = SardisGroupBudgetTool(client=sardis)
+
+result = group_tool._run(group_id=group.group_id)
+print(result)
+# Output:
+# Group: engineering-procurement
+#   Group ID: group_abc123
+#   Agents: 3
+#   Budget (per tx): $200
+#   Budget (daily): $1000
+#   Budget (monthly): $30000
+#   Spent today: $250
+#   Daily remaining: $750
+#   Transactions today: 5
+```
+
+## Group Budgets
+
+Enforce shared spending limits across multiple agents:
+
+```python
+# Create group with budget
+group = sardis.groups.create(
+    name="engineering-team",
+    budget={
+        "per_transaction": "200.00",  # Max $200 per payment
+        "daily": "1000.00",            # Max $1000/day (all agents)
+        "monthly": "30000.00",         # Max $30k/month (all agents)
+    },
+    merchant_policy={
+        "blocked_categories": ["gambling", "entertainment"],
+        "allowed_vendors": ["openai.com", "anthropic.com", "aws.com"],
+    },
+)
+
+# All agents in the group share these limits
+sardis.groups.add_agent(group.group_id, agent1.agent_id)
+sardis.groups.add_agent(group.group_id, agent2.agent_id)
+sardis.groups.add_agent(group.group_id, agent3.agent_id)
+
+# If agent1 spends $600, all agents now have $400 remaining for the day
+```
+
+## Agent Roles
+
+### Researcher Agent
+
+Read-only access to check budgets and analyze options:
+
+```python
+researcher = Agent(
+    role="Research Analyst",
+    goal="Find and evaluate software tools",
+    tools=create_sardis_tools(
+        client=sardis,
+        wallet_id=researcher_wallet.wallet_id,
+        read_only=True,  # Cannot make payments
+    ),
+)
+```
+
+### Purchaser Agent
+
+Full access to execute payments:
+
+```python
+purchaser = Agent(
+    role="Procurement Specialist",
+    goal="Execute approved purchases",
+    tools=create_sardis_tools(
+        client=sardis,
+        wallet_id=purchaser_wallet.wallet_id,
+        group_id=group.group_id,
+    ),
+)
+```
+
+### Auditor Agent
+
+Read-only access to review transactions:
+
+```python
+auditor = Agent(
+    role="Financial Auditor",
+    goal="Review spending for compliance",
+    tools=create_sardis_tools(
+        client=sardis,
+        wallet_id=auditor_wallet.wallet_id,
+        read_only=True,
+    ),
+)
+```
+
+## Sequential Workflows
+
+CrewAI executes tasks sequentially, passing context between agents:
+
+```python
+# Task 1: Researcher finds options
+research_task = Task(
+    description="Research API providers and estimate costs",
+    expected_output="List of recommended purchases with justifications",
+    agent=researcher,
+)
+
+# Task 2: Purchaser executes (receives researcher output)
+purchase_task = Task(
+    description="Execute the purchases recommended by the researcher",
+    expected_output="Payment confirmations with transaction IDs",
+    agent=purchaser,
+    context=[research_task],  # Receives researcher output
+)
+
+# Task 3: Auditor reviews (receives purchaser output)
+audit_task = Task(
+    description="Review all purchases for compliance",
+    expected_output="Compliance report",
+    agent=auditor,
+    context=[research_task, purchase_task],  # Receives both outputs
+)
+
+crew = Crew(
+    agents=[researcher, purchaser, auditor],
+    tasks=[research_task, purchase_task, audit_task],
+    process=Process.sequential,  # Run tasks in order
+)
+```
+
+## Hierarchical Teams
+
+Use a manager agent to coordinate the team:
+
+```python
+from crewai import Process
+
+manager = Agent(
+    role="Finance Manager",
+    goal="Coordinate procurement team and approve large purchases",
+    backstory="You oversee the procurement team and ensure policy compliance.",
+    allow_delegation=True,
+)
+
+crew = Crew(
+    agents=[researcher, purchaser, auditor],
+    tasks=[research_task, purchase_task, audit_task],
+    process=Process.hierarchical,
+    manager_agent=manager,
+)
+```
+
+## Policy Enforcement
+
+Enforce group-level policies:
+
+```python
+group = sardis.groups.create(
+    name="engineering-team",
+    budget={"daily": "1000.00"},
+    merchant_policy={
+        "allowed_vendors": ["openai.com", "anthropic.com"],
+        "blocked_categories": ["gambling"],
+        "require_approval_above": "500.00",
+    },
+)
+
+# Payments to blocked vendors will fail
+# Payments over $500 require human approval
+# All agents in group share these rules
+```
+
+## Example: Three-Agent Procurement Team
+
+```python examples/crewai_finance_team.py
+import os
+from decimal import Decimal
+from crewai import Agent, Crew, Task
+from sardis import SardisClient
+from sardis_crewai import create_sardis_tools
+
+sardis = SardisClient(api_key=os.environ["SARDIS_API_KEY"])
+
+# Create group
+group = sardis.groups.create(
+    name="engineering-procurement",
+    budget={"daily": "1000.00"},
+)
+
+# Create agents
+researcher = sardis.agents.create(name="researcher")
+purchaser = sardis.agents.create(name="purchaser")
+auditor = sardis.agents.create(name="auditor")
+
+# Create wallets
+researcher_wallet = sardis.wallets.create(
+    agent_id=researcher.agent_id, chain="base", currency="USDC"
+)
+purchaser_wallet = sardis.wallets.create(
+    agent_id=purchaser.agent_id, chain="base", currency="USDC"
+)
+auditor_wallet = sardis.wallets.create(
+    agent_id=auditor.agent_id, chain="base", currency="USDC"
+)
+
+# Add to group
+sardis.groups.add_agent(group.group_id, researcher.agent_id)
+sardis.groups.add_agent(group.group_id, purchaser.agent_id)
+sardis.groups.add_agent(group.group_id, auditor.agent_id)
+
+# Create CrewAI agents
+researcher_agent = Agent(
+    role="Research Analyst",
+    goal="Find tools and estimate costs",
+    tools=create_sardis_tools(
+        client=sardis,
+        wallet_id=researcher_wallet.wallet_id,
+        read_only=True,
+    ),
+)
+
+purchaser_agent = Agent(
+    role="Procurement Specialist",
+    goal="Execute approved purchases",
+    tools=create_sardis_tools(
+        client=sardis,
+        wallet_id=purchaser_wallet.wallet_id,
+        group_id=group.group_id,
+    ),
+)
+
+auditor_agent = Agent(
+    role="Financial Auditor",
+    goal="Review spending for compliance",
+    tools=create_sardis_tools(
+        client=sardis,
+        wallet_id=auditor_wallet.wallet_id,
+        read_only=True,
+    ),
+)
+
+# Define workflow
+research = Task(
+    description="Research API providers: OpenAI (~$30), Anthropic (~$25)",
+    expected_output="Recommended purchases with costs",
+    agent=researcher_agent,
+)
+
+purchase = Task(
+    description="Execute the recommended purchases",
+    expected_output="Payment confirmations",
+    agent=purchaser_agent,
+    context=[research],
+)
+
+audit = Task(
+    description="Review purchases for compliance",
+    expected_output="Compliance report",
+    agent=auditor_agent,
+    context=[research, purchase],
+)
+
+crew = Crew(
+    agents=[researcher_agent, purchaser_agent, auditor_agent],
+    tasks=[research, purchase, audit],
+)
+
+result = crew.kickoff()
+print(result)
+```
+
+## Best Practices
+
+### 1. Use Group Budgets for Team Coordination
+
+```python
+# All agents share the daily limit
+group = sardis.groups.create(
+    name="team",
+    budget={"daily": "1000.00"},
+)
+```
+
+### 2. Assign Clear Roles
+
+```python
+# Researcher: read-only
+# Purchaser: execute payments
+# Auditor: review transactions
+```
+
+### 3. Use Context for Sequential Tasks
+
+```python
+purchase_task = Task(
+    description="...",
+    agent=purchaser,
+    context=[research_task],  # Get researcher's output
+)
+```
+
+### 4. Set Per-Agent Limits
+
+```python
+# Researcher: $50/tx (for small test purchases)
+researcher_wallet = sardis.wallets.create(
+    agent_id=researcher.agent_id,
+    limit_per_tx=Decimal("50.00"),
+)
+
+# Purchaser: $200/tx (for real purchases)
+purchaser_wallet = sardis.wallets.create(
+    agent_id=purchaser.agent_id,
+    limit_per_tx=Decimal("200.00"),
+)
+```
+
+## Troubleshooting
+
+### Group Budget Exceeded
+
+```python
+Payment rejected: Group daily budget of $1000 exceeded
+```
+
+Check group spending:
+
+```python
+spending = sardis.groups.get_spending(group.group_id)
+print(f"Spent today: ${spending['daily']}")
+print(f"Remaining: ${spending['daily_remaining']}")
+```
+
+### Agent Not in Group
+
+```python
+ValueError: Agent agent_xyz is not in group group_abc
+```
+
+Add agent to group:
+
+```python
+sardis.groups.add_agent(group.group_id, agent.agent_id)
+```
+
+### Tool Not Available
+
+```python
+ToolError: Tool sardis_pay not found
+```
+
+Ensure tools are passed to agent:
+
+```python
+tools = create_sardis_tools(client=sardis, wallet_id=wallet.wallet_id)
+agent = Agent(role="...", tools=tools)  # Don't forget tools
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="LangChain" icon="link" href="/integrations/langchain">
+    Build single-agent workflows
+  </Card>
+  <Card title="Group Budgets" icon="users" href="/core-concepts/group-budgets">
+    Deep dive into group budget enforcement
+  </Card>
+  <Card title="Policy Engine" icon="shield" href="/core-concepts/policy-engine">
+    Understand spending policy rules
+  </Card>
+  <Card title="API Reference" icon="book" href="/api-reference/python-sdk">
+    Full Python SDK documentation
+  </Card>
+</CardGroup>

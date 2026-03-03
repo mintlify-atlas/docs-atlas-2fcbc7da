@@ -1,80 +1,444 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get your first AI agent payment running in under 5 minutes
 ---
 
-## Get started in three steps
+## Get Your First Agent Payment Running in 5 Minutes
 
-Get your documentation site running locally and make your first customization.
+This guide walks you through creating an AI agent, provisioning a wallet, and executing your first policy-enforced payment.
 
-### Step 1: Set up your local environment
+<Steps>
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+<Step title="Get Your API Key">
+
+Sign up at [sardis.sh](https://sardis.sh) and create an API key:
+
+1. Go to **Settings** → **API Keys**
+2. Click **Create API Key**
+3. Copy your key — it starts with `sk_live_...` (production) or `sk_test_...` (sandbox)
+
+<Warning>
+  Keep your API key secret! Never commit it to version control. Use environment variables:
+  ```bash
+  export SARDIS_API_KEY=sk_live_...
+  ```
+</Warning>
+
+</Step>
+
+<Step title="Install the SDK">
+
+<Tabs>
+  <Tab title="Python">
+    ```bash
+    pip install sardis
+    ```
+
+    Requires Python 3.11+
+  </Tab>
+  <Tab title="TypeScript">
+    ```bash
+    npm install @sardis/sdk
+    ```
+
+    Requires Node.js 18+
+  </Tab>
+  <Tab title="MCP Server">
+    No installation needed! MCP uses npx:
+
+    ```json
+    {
+      "mcpServers": {
+        "sardis": {
+          "command": "npx",
+          "args": ["-y", "@sardis/mcp-server"],
+          "env": {
+            "SARDIS_API_KEY": "sk_live_..."
+          }
+        }
+      }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+</Step>
+
+<Step title="Create an Agent and Wallet">
+
+<CodeGroup>
+
+```python Python
+from sardis import SardisClient
+from decimal import Decimal
+
+# Initialize the client
+sardis = SardisClient(api_key="sk_live_...")
+
+# Create an AI agent
+agent = sardis.agents.create(
+    name="my-first-agent",
+    description="My first Sardis agent",
+)
+
+print(f"Agent created: {agent.agent_id}")
+
+# Create a wallet with spending policies
+wallet = sardis.wallets.create(
+    agent_id=agent.agent_id,
+    chain="base",
+    currency="USDC",
+    limit_per_tx=Decimal("100.00"),  # Max $100 per transaction
+    limit_total=Decimal("500.00"),   # Max $500 total
+)
+
+print(f"Wallet created: {wallet.wallet_id}")
+print(f"Wallet address: {wallet.address}")
+```
+
+```typescript TypeScript
+import { SardisClient } from '@sardis/sdk';
+
+// Initialize the client
+const sardis = new SardisClient({ apiKey: 'sk_live_...' });
+
+// Create an AI agent
+const agent = await sardis.agents.create({
+  name: 'my-first-agent',
+  description: 'My first Sardis agent',
+});
+
+console.log(`Agent created: ${agent.agent_id}`);
+
+// Create a wallet with spending policies
+const wallet = await sardis.wallets.create({
+  agent_id: agent.agent_id,
+  chain: 'base',
+  currency: 'USDC',
+  limit_per_tx: '100.00',  // Max $100 per transaction
+  limit_total: '500.00',   // Max $500 total
+});
+
+console.log(`Wallet created: ${wallet.wallet_id}`);
+console.log(`Wallet address: ${wallet.address}`);
+```
+
+```bash MCP (Claude Desktop)
+# Just ask Claude after configuring the MCP server:
+
+"Create a new agent called 'my-first-agent' and provision a wallet with a $100 per transaction limit and $500 total limit on Base with USDC."
+```
+
+</CodeGroup>
+
+<Info>
+  The wallet is **non-custodial** — keys are managed by Turnkey MPC. You never see or handle private keys.
+</Info>
+
+</Step>
+
+<Step title="Fund Your Wallet">
+
+Before you can make payments, fund your wallet with USDC:
+
+<Tabs>
+  <Tab title="Test Mode (Sandbox)">
+    Sandbox wallets come pre-funded with test USDC. No action needed!
+  </Tab>
+  <Tab title="Production Mode">
+    Send USDC to your wallet address from:
+
+    - Coinbase
+    - Circle account
+    - Another wallet
+    - On-ramp service (Stripe, MoonPay)
+
+    ```python
+    # Check balance
+    balance = sardis.wallets.get_balance(
+        wallet.wallet_id,
+        chain="base",
+        token="USDC"
+    )
+    print(f"Balance: {balance.balance} USDC")
+    ```
+  </Tab>
+</Tabs>
+
+</Step>
+
+<Step title="Execute Your First Payment">
+
+Now execute a payment with automatic policy validation:
+
+<CodeGroup>
+
+```python Python
+from sardis import SardisClient
+from decimal import Decimal
+
+sardis = SardisClient(api_key="sk_live_...")
+
+# Execute a payment
+result = sardis.wallets.transfer(
+    wallet.wallet_id,
+    destination="merchant@example.com",  # Or wallet address
+    amount=Decimal("25.00"),
+    token="USDC",
+    chain="base",
+    domain="openai.com",  # Merchant domain for policy checks
+    memo="OpenAI API credits",
+)
+
+print(f"Payment status: {result.status}")
+print(f"Transaction hash: {result.tx_hash}")
+print(f"Amount: {result.amount} {result.token}")
+print(f"From: {result.from_address}")
+print(f"To: {result.to_address}")
+print(f"Chain: {result.chain}")
+```
+
+```typescript TypeScript
+import { SardisClient } from '@sardis/sdk';
+
+const sardis = new SardisClient({ apiKey: 'sk_live_...' });
+
+// Execute a payment
+const result = await sardis.wallets.transfer(wallet.wallet_id, {
+  destination: 'merchant@example.com',  // Or wallet address
+  amount: '25.00',
+  token: 'USDC',
+  chain: 'base',
+  domain: 'openai.com',  // Merchant domain for policy checks
+  memo: 'OpenAI API credits',
+});
+
+console.log(`Payment status: ${result.status}`);
+console.log(`Transaction hash: ${result.tx_hash}`);
+console.log(`Amount: ${result.amount} ${result.token}`);
+console.log(`From: ${result.from_address}`);
+console.log(`To: ${result.to_address}`);
+console.log(`Chain: ${result.chain}`);
+```
+
+```bash MCP (Claude Desktop)
+"Pay $25 USDC to openai.com on Base for API credits using wallet {wallet_id}"
+```
+
+</CodeGroup>
+
+<Tip>
+  The payment is automatically validated against your wallet's spending policies:
+  - ✅ Amount ($25) is under per-transaction limit ($100)
+  - ✅ Total spending is under daily limit ($500)
+  - ✅ Merchant domain is not blocked
+</Tip>
+
+</Step>
+
+<Step title="Verify the Transaction">
+
+Check the transaction in the Sardis dashboard or query the ledger:
+
+<CodeGroup>
+
+```python Python
+# Get transaction details
+transaction = sardis.transactions.get(result.tx_hash)
+
+print(f"Status: {transaction.status}")
+print(f"Confirmations: {transaction.confirmations}")
+print(f"Block: {transaction.block_number}")
+print(f"Gas used: {transaction.gas_used}")
+
+# View in block explorer
+print(f"Block explorer: https://basescan.org/tx/{result.tx_hash}")
+```
+
+```typescript TypeScript
+// Get transaction details
+const transaction = await sardis.transactions.get(result.tx_hash);
+
+console.log(`Status: ${transaction.status}`);
+console.log(`Confirmations: ${transaction.confirmations}`);
+console.log(`Block: ${transaction.block_number}`);
+console.log(`Gas used: ${transaction.gas_used}`);
+
+// View in block explorer
+console.log(`Block explorer: https://basescan.org/tx/${result.tx_hash}`);
+```
+
+```bash CLI
+sardis transactions get {tx_hash}
+sardis ledger list --wallet {wallet_id} --limit 10
+```
+
+</CodeGroup>
+
+</Step>
+
+</Steps>
+
+## Complete Working Example
+
+Here's a complete example from our [examples directory](https://github.com/EfeDurmaz16/sardis/tree/main/examples):
+
+<CodeGroup>
+
+```python examples/simple_payment.py
+#!/usr/bin/env python3
+"""
+Simple Payment Demo
+===================
+
+This example shows how to create a wallet and execute a payment
+using the Sardis payment protocol.
+"""
+
+from sardis import Wallet, Transaction
+
+def main():
+    # Create a wallet with initial balance
+    print("1. Creating wallet with $50 USDC...")
+    wallet = Wallet(initial_balance=50, currency="USDC")
+    print(f"   Wallet ID: {wallet.wallet_id}")
+    print(f"   Balance: ${wallet.balance} {wallet.currency}")
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
+    # Create and execute a transaction
+    print("2. Executing payment of $2 to OpenAI API...")
+    tx = Transaction(
+        from_wallet=wallet,
+        to="openai:api",
+        amount=2,
+        purpose="GPT-4 API call"
+    )
     
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
+    result = tx.execute()
+    print(f"   Transaction ID: {result.tx_id}")
+    print(f"   Status: {result.status.value}")
+    print(f"   TX Hash: {result.tx_hash}")
     
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    # Check new balance
+    print("3. Checking wallet balance...")
+    print(f"   New Balance: ${wallet.balance} {wallet.currency}")
+    print(f"   Total Spent: ${wallet.spent_total}")
+    
+    print("✓ Demo completed successfully!")
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+if __name__ == "__main__":
+    main()
+```
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+```typescript examples/vercel_ai_payment.ts
+import { generateText, tool } from "ai";
+import { openai } from "@ai-sdk/openai";
+import { z } from "zod";
+import { SardisClient } from "@sardis/sdk";
 
-### Step 3: Go live
+const sardis = new SardisClient({ apiKey: process.env.SARDIS_API_KEY });
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+async function main() {
+  const agent = await sardis.agents.create({
+    name: "vercel-ai-agent",
+    description: "Vercel AI SDK procurement example agent",
+  });
 
-## Next steps
+  const wallet = await sardis.wallets.create({
+    agent_id: agent.agent_id,
+    currency: "USDC",
+    limit_per_tx: "100.00",
+    limit_total: "500.00",
+  });
 
-Now that you have your docs running, explore these key features:
+  const { text } = await generateText({
+    model: openai("gpt-4o"),
+    system: "You are a procurement agent with a Sardis wallet.",
+    prompt: "Purchase $25 of OpenAI API credits.",
+    tools: {
+      sardisPay: tool({
+        description: "Execute a payment through Sardis",
+        parameters: z.object({
+          to: z.string(),
+          amount: z.string(),
+          token: z.enum(["USDC", "USDT", "EURC"]),
+          purpose: z.string(),
+        }),
+        execute: async ({ to, amount, token, purpose }) => {
+          const result = await sardis.wallets.transfer(wallet.wallet_id, {
+            destination: to,
+            amount,
+            token,
+            chain: "base",
+            domain: to,
+            memo: purpose,
+          });
+          return {
+            status: result.status,
+            txHash: result.tx_hash,
+          };
+        },
+      }),
+    },
+  });
+
+  console.log("Agent response:", text);
+}
+
+main();
+```
+
+</CodeGroup>
+
+## What's Next?
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card
+    title="Framework Integrations"
+    icon="plug"
+    href="/integrations/mcp"
+  >
+    Use Sardis with LangChain, OpenAI, CrewAI, Vercel AI, and more
+  </Card>
+  <Card
+    title="Spending Policies"
+    icon="shield-check"
+    href="/concepts/policies"
+  >
+    Learn how to write natural language spending policies
+  </Card>
+  <Card
+    title="Multi-Agent Teams"
+    icon="users"
+    href="/concepts/agent-groups"
+  >
+    Create agent teams with shared budgets and group governance
+  </Card>
+  <Card
+    title="API Reference"
+    icon="code"
+    href="/api/overview"
+  >
+    Explore the complete API documentation
+  </Card>
 </CardGroup>
 
+## Common Issues
+
+<AccordionGroup>
+  <Accordion title="Payment failed: insufficient balance">
+    Fund your wallet with USDC on the target chain (e.g., Base, Polygon). In sandbox mode, test wallets are pre-funded.
+  </Accordion>
+  <Accordion title="Payment failed: policy violation">
+    Check your wallet's spending limits with `sardis.wallets.get(wallet_id)`. The payment may exceed per-transaction or daily limits.
+  </Accordion>
+  <Accordion title="Payment failed: blocked merchant">
+    The merchant domain may be on your blocklist or flagged by compliance checks. Review your policy settings.
+  </Accordion>
+  <Accordion title="Transaction pending for too long">
+    Blockchain transactions can take 1-5 minutes depending on network congestion. Check the block explorer for real-time status.
+  </Accordion>
+</AccordionGroup>
+
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  **Need help?** Join our [Discord](https://discord.gg/XMA9JwDJ) or email support@sardis.sh
 </Note>

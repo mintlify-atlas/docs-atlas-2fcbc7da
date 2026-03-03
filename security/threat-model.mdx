@@ -1,0 +1,503 @@
+---
+title: 'Threat Model'
+description: 'Attack surfaces, threat scenarios, and mitigation strategies'
+icon: 'triangle-exclamation'
+---
+
+## Overview
+
+This document outlines the threat model for Sardis, covering attack surfaces, potential threat scenarios, security guarantees, and mitigation strategies. All findings are based on the [Security Audit Report](/security/audit-report) (2026-02-21).
+
+<Warning>
+**Risk Level**: MEDIUM (6 Critical, 12 High, 15 Medium issues identified)
+</Warning>
+
+## Attack Surfaces
+
+### 1. MPC Provider Compromise
+
+**Attack**: Attacker gains control of MPC provider infrastructure (Turnkey/Circle)
+
+**Impact**: Potential access to private key shares
+
+**Likelihood**: Low (both providers use HSM-backed threshold cryptography)
+
+**Mitigations**:
+- **Threshold Security**: Private keys are split across geographically distributed HSMs—no single point of failure
+- **Multi-Provider Support**: Sardis supports both Turnkey and Circle—can switch providers if one is compromised
+- **Audit Logs**: All signing operations are logged with cryptographic proofs
+- **Rate Limiting**: Sardis enforces velocity limits on signing requests
+
+**Residual Risk**: Low
+
+### 2. Spending Policy Bypass
+
+**Attack**: Agent finds a way to execute payments without policy validation
+
+**Impact**: Unauthorized spending, financial loss
+
+**Likelihood**: Very Low (fail-closed design)
+
+**Mitigations**:
+- **Fail-Closed Architecture**: All policy checks default to denial on error
+- **No Direct MPC Access**: Agents cannot call MPC providers directly—all requests go through Sardis policy firewall
+- **Deterministic Validation**: Policy checks are deterministic and don't rely on LLM interpretation
+- **Execution Context Validation**: Chain, token, and destination are validated before signing
+
+**Code Reference**: `packages/sardis-core/src/sardis_v2_core/spending_policy.py:246-417`
+
+**Residual Risk**: Very Low
+
+### 3. SQL Injection (CRITICAL)
+
+**Attack**: SQL injection via `group_by` parameter in analytics endpoint
+
+**Location**: `packages/sardis-api/src/sardis_api/routers/analytics.py:256-258`
+
+**Vulnerable Code**:
+```python
+query = f"""
+    SELECT DATE_TRUNC('{trunc}', created_at) as date, ...
+    FROM transactions
+    GROUP BY DATE_TRUNC('{trunc}', created_at)
+"""
+```
+
+**Exploit**:
+```bash
+GET /analytics/spending-over-time?group_by=day');DROP TABLE transactions;--
+```
+
+**Impact**: Complete database compromise, data exfiltration, data destruction
+
+**Mitigation** (IMMEDIATE):
+```python
+ALLOWED_TRUNCATIONS = {"day", "week", "month"}
+if group_by not in ALLOWED_TRUNCATIONS:
+    raise HTTPException(400, "Invalid group_by parameter")
+
+trunc = group_by  # Now safe to use
+```
+
+**Status**: ❌ UNFIXED
+
+### 4. WebSocket Authentication Bypass (CRITICAL)
+
+**Attack**: Connect to any organization's WebSocket alert stream
+
+**Location**: `packages/sardis-api/src/sardis_api/routers/ws_alerts.py:107-128`
+
+**Vulnerable Code**:
+```python
+def _validate_token(token: str) -> tuple[bool, str]:
+    if token.startswith("org_"):
+        org_id = token[4:]
+        if org_id:
+            return True, org_id  # Accepts ANY string after "org_"
+    return True, token  # ALWAYS RETURNS TRUE
+```
+
+**Exploit**:
+```javascript
+ws://api.sardis.sh/api/v2/ws/alerts?token=org_victim_company
+```
+
+**Impact**: Real-time alert interception, unauthorized access to sensitive financial events
+
+**Mitigation** (IMMEDIATE):
+```python
+def _validate_token(token: str) -> tuple[bool, str]:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        return True, payload["organization_id"]
+    except jwt.InvalidTokenError:
+        pass
+    
+    # Validate API key
+    api_key = validate_api_key(token)
+    if api_key:
+        return True, api_key.organization_id
+    
+    return False, ""
+```
+
+**Status**: ❌ UNFIXED
+
+### 5. Sandbox Endpoint DoS (CRITICAL)
+
+**Attack**: Abuse unauthenticated sandbox endpoints to create unlimited resources
+
+**Location**: `packages/sardis-api/src/sardis_api/routers/sandbox.py:38`
+
+**Vulnerable Code**:
+```python
+router = APIRouter()  # NO dependencies=[Depends(require_principal)]
+```
+
+**Impact**: DoS attacks, resource exhaustion, reconnaissance
+
+**Mitigation**:
+```python
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
+
+@router.post("/payment")
+@limiter.limit("10/minute")
+async def sandbox_payment(request: Request, req: SandboxPaymentRequest):
+    ...
+```
+
+**Status**: ❌ UNFIXED
+
+### 6. Race Conditions in Escrow State Transitions (HIGH)
+
+**Attack**: Exploit non-atomic state transitions to double-fund or double-release escrows
+
+**Location**: `packages/sardis-core/src/sardis_v2_core/a2a_escrow.py:213-258`
+
+**Vulnerable Code**:
+```python
+async def fund_escrow(self, escrow_id: str, tx_hash: str) -> Escrow:
+    escrow = await self.get_escrow(escrow_id)  # Read
+    # Race condition window: another request can modify escrow here
+    if not escrow.can_transition_to(EscrowState.FUNDED):
+        raise SardisConflictError(...)
+    await conn.execute("UPDATE escrows SET state = $1 ...", ...)  # Write
+```
+
+**Impact**: Financial loss, escrow manipulation
+
+**Mitigation**:
+```python
+async def fund_escrow(self, escrow_id: str, tx_hash: str) -> Escrow:
+    result = await conn.execute(
+        """
+        UPDATE escrows
+        SET state = $1, funded_at = $2, funding_tx_hash = $3
+        WHERE id = $4 AND state = $5
+        RETURNING *
+        """,
+        EscrowState.FUNDED.value,
+        now,
+        tx_hash,
+        escrow_id,
+        EscrowState.CREATED.value,  # Atomic check-and-update
+    )
+    if result == "UPDATE 0":
+        raise SardisConflictError("Invalid state transition or escrow not found")
+```
+
+**Status**: ⚠️ PARTIAL FIX
+
+### 7. Missing Rate Limiting on Payment Endpoints (HIGH)
+
+**Attack**: Flood payment creation endpoints to exhaust resources or trigger denial-of-service
+
+**Locations**:
+- `/v2/trust/payments/split`
+- `/v2/a2a/escrows`
+- `/v2/trust/payments/{flow_id}/execute`
+
+**Impact**: DoS, resource exhaustion, financial loss from gas fees
+
+**Mitigation**:
+```python
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
+
+@router.post("/payments/split")
+@limiter.limit("10/minute")
+async def create_split_payment(request: Request, ...):
+    ...
+
+@router.post("/escrows")
+@limiter.limit("20/hour")
+async def create_escrow(request: Request, ...):
+    ...
+```
+
+**Status**: ❌ UNFIXED
+
+### 8. Insufficient Decimal Validation (HIGH)
+
+**Attack**: Send extremely large or malformed Decimal values to trigger overflow or precision errors
+
+**Locations**:
+- `packages/sardis-api/src/sardis_api/routers/trust.py:203-209`
+- `packages/sardis-api/src/sardis_api/routers/a2a_payments.py:80`
+
+**Vulnerable Code**:
+```python
+recipients = [
+    (r["id"], Decimal(r["share"]))  # No validation
+    for r in req.recipients
+]
+total_amount = Decimal(req.total_amount)  # Overflow possible
+```
+
+**Impact**: Financial calculation errors, incorrect payment amounts
+
+**Mitigation**:
+```python
+from decimal import Decimal, InvalidOperation
+
+MAX_AMOUNT = Decimal("1000000000")  # $1B limit
+
+def safe_decimal(value: str, field_name: str) -> Decimal:
+    try:
+        amount = Decimal(value)
+    except (InvalidOperation, ValueError):
+        raise HTTPException(400, f"Invalid decimal for {field_name}")
+    
+    if amount < 0:
+        raise HTTPException(400, f"{field_name} must be non-negative")
+    if amount > MAX_AMOUNT:
+        raise HTTPException(400, f"{field_name} exceeds maximum allowed")
+    
+    return amount
+
+total_amount = safe_decimal(req.total_amount, "total_amount")
+```
+
+**Status**: ⚠️ PARTIAL FIX
+
+## Threat Scenarios
+
+### Scenario 1: Compromised Agent LLM
+
+**Threat**: An agent's LLM is compromised (prompt injection, jailbreak, model poisoning)
+
+**Attack Path**:
+1. Attacker injects malicious instructions into agent's context
+2. Agent attempts to send payment to attacker-controlled address
+3. Sardis policy firewall validates the transaction
+4. ✅ Transaction is **denied** if it violates policy (wrong merchant, exceeds limits, etc.)
+
+**Mitigations**:
+- Spending policy enforcement (fail-closed)
+- Merchant allowlists/blocklists
+- Destination address validation
+- Goal drift detection
+
+**Residual Risk**: Low (policy firewall prevents most attacks)
+
+### Scenario 2: Credential Theft
+
+**Threat**: Attacker steals Sardis API key or MPC provider credentials
+
+**Attack Path**:
+1. Attacker exfiltrates API key from `.env` or git history
+2. Attacker attempts to create wallets and execute transactions
+3. ✅ **Mitigated** if:
+   - API key is scoped to specific agent
+   - IP allowlisting is enabled
+   - MPC credentials require separate authentication
+
+**Mitigations**:
+- Never commit secrets to git (`.env` in `.gitignore`)
+- Store credentials in AWS Secrets Manager / HashiCorp Vault
+- Rotate API keys every 90 days
+- Enable IP allowlisting on MPC provider dashboards
+- Use separate credentials for MPC vs. Sardis API
+
+**Residual Risk**: Medium (depends on credential hygiene)
+
+### Scenario 3: Insider Threat
+
+**Threat**: Malicious insider with access to Sardis infrastructure attempts to steal funds
+
+**Attack Path**:
+1. Insider attempts to sign transactions directly with MPC provider
+2. ✅ **Prevented**: Sardis does not have access to MPC private keys
+3. Insider attempts to modify spending policies in database
+4. ⚠️ **Risk**: Could bypass limits if database is compromised
+
+**Mitigations**:
+- **Non-Custodial Design**: Sardis never has access to private keys
+- **Database Encryption**: All sensitive data encrypted at rest
+- **Audit Logs**: Immutable audit trail of all policy changes
+- **Multi-Sig Policies**: Require multiple approvals for policy changes
+- **SOC 2 Compliance**: Annual security audits
+
+**Residual Risk**: Low (non-custodial design limits impact)
+
+### Scenario 4: Man-in-the-Middle (MITM)
+
+**Threat**: Attacker intercepts communication between Sardis and MPC provider
+
+**Attack Path**:
+1. Attacker attempts to intercept TLS traffic
+2. ✅ **Prevented**: All MPC communication uses TLS 1.3 with certificate pinning
+3. Attacker attempts to replay captured requests
+4. ✅ **Prevented**: Turnkey uses nonce-based P-256 stamps, Circle uses one-time entity secrets
+
+**Mitigations**:
+- TLS 1.3 with mutual authentication
+- Certificate pinning
+- Request signing (Turnkey P-256 stamps)
+- Nonce-based replay protection
+
+**Residual Risk**: Very Low
+
+## Security Guarantees
+
+### What Sardis Guarantees
+
+<CardGroup cols={2}>
+  <Card title="Non-Custodial" icon="hand">
+    Sardis never has access to private keys—all signing happens via MPC
+  </Card>
+  <Card title="Fail-Closed" icon="lock">
+    All policy checks default to denial on error
+  </Card>
+  <Card title="Deterministic Validation" icon="calculator">
+    Policy enforcement is deterministic—no LLM involvement
+  </Card>
+  <Card title="Immutable Audit Trail" icon="scroll">
+    All transactions and policy decisions are logged
+  </Card>
+</CardGroup>
+
+### What Sardis Does NOT Guarantee
+
+<Warning>
+- **Agent Behavior**: Sardis cannot control what agents do before submitting transactions
+- **LLM Jailbreaks**: Sardis does not prevent prompt injection or model poisoning
+- **Social Engineering**: Sardis cannot detect if a human is tricked into approving a malicious transaction
+- **Smart Contract Bugs**: Sardis does not audit the security of recipient smart contracts
+</Warning>
+
+## Compliance Considerations
+
+### PCI DSS (if handling card data)
+
+- ✅ Encryption in transit (HTTPS/TLS 1.3)
+- ✅ Minimal card data storage (Lithic handles tokenization)
+- ⚠️ Missing: Regular vulnerability scans
+- ⚠️ Missing: Firewall rules documentation
+
+### SOC 2 Type II
+
+- ✅ Access controls (RBAC)
+- ✅ Audit logging (partial)
+- ⚠️ Missing: Comprehensive monitoring
+- ⚠️ Missing: Incident response plan
+
+### GDPR (if EU users)
+
+- ✅ User data export endpoint
+- ⚠️ Missing: Data deletion endpoints
+- ⚠️ Missing: Consent management
+- ⚠️ Missing: Data processing agreements
+
+## Remediation Roadmap
+
+### Immediate (Week 1)
+
+<Steps>
+  <Step title="Fix SQL Injection">
+    Add input validation to `analytics.py` (C1)
+  </Step>
+  <Step title="Secure WebSocket Auth">
+    Implement JWT validation in `ws_alerts.py` (C3)
+  </Step>
+  <Step title="Add Rate Limiting">
+    Install `slowapi` and add rate limits to payment endpoints (H1)
+  </Step>
+  <Step title="Fix Escrow Race Conditions">
+    Use atomic SQL updates in `a2a_escrow.py` (H3)
+  </Step>
+  <Step title="Secure Sandbox">
+    Add authentication or IP-based rate limiting to `sandbox.py` (C2)
+  </Step>
+</Steps>
+
+### Short-Term (Month 1)
+
+- Implement CSRF protection (C6)
+- Add Decimal input validation (H2)
+- Fix IDOR vulnerabilities (M2)
+- Add security headers middleware (M4)
+- Implement comprehensive audit logging (M5)
+
+### Medium-Term (Quarter 1)
+
+- Move secrets to AWS Secrets Manager (C4)
+- Implement IP validation for anonymous access (C5)
+- Add pagination limits everywhere (M1)
+- Add circuit breakers for external APIs (M12)
+- Implement security event monitoring (M14)
+
+### Long-Term (Ongoing)
+
+- Regular penetration testing
+- Dependency vulnerability scanning (npm audit, pip-audit)
+- Security training for developers
+- Establish bug bounty program
+- Annual SOC 2 Type II audits
+
+## Monitoring & Detection
+
+### Recommended Alerts
+
+```python
+# High policy denial rate
+if policy_denial_rate > 0.5:  # >50% denials
+    alert("High policy denial rate detected", severity="high")
+
+# Unusual signing activity
+if signing_requests > 100 per minute:
+    alert("Unusual MPC signing activity", severity="critical")
+
+# Failed authentication attempts
+if failed_auth_attempts > 10 per minute:
+    alert("Potential credential stuffing attack", severity="high")
+
+# Velocity limit hits
+if velocity_limit_hits > 5 per hour:
+    alert("Agent hitting velocity limits", severity="medium")
+```
+
+### Audit Log Queries
+
+```python
+# Find all denied transactions for an agent
+await audit_logger.query(AuditQuery(
+    wallet_id=wallet.wallet_id,
+    action=AuditAction.TRANSACTION_DENIED,
+    start_time=datetime.now(timezone.utc) - timedelta(days=7),
+))
+
+# Find all key rotation events
+await audit_logger.query(AuditQuery(
+    category=AuditCategory.KEY_MANAGEMENT,
+    action=AuditAction.KEY_ROTATED,
+))
+
+# Find all security events
+await audit_logger.query(AuditQuery(
+    level=AuditLevel.SECURITY,
+))
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Best Practices" icon="list-check" href="/security/best-practices">
+    Security hardening, API key management, and operational procedures
+  </Card>
+  <Card title="Policy Enforcement" icon="gavel" href="/security/policy-enforcement">
+    Deep dive into spending policy implementation
+  </Card>
+</CardGroup>
+
+## Additional Resources
+
+- [Security Audit Report](/security/audit-report) (2026-02-21)
+- [Turnkey Security Whitepaper](https://turnkey.com/security)
+- [Circle W3S Security](https://developers.circle.com/w3s/docs/security)
+- [OWASP Top 10](https://owasp.org/www-project-top-ten/)

@@ -1,0 +1,527 @@
+---
+title: Agent-to-Agent Payments
+description: Enable AI agents to transact with each other using A2A protocol
+---
+
+Sardis implements the Agent-to-Agent (A2A) protocol, allowing AI agents to discover, negotiate with, and pay each other autonomously. This enables agent marketplaces, service exchanges, and collaborative agent economies.
+
+## What is A2A?
+
+The A2A protocol enables:
+
+- **Agent Discovery**: Find agents by capability via `/.well-known/agent-card.json`
+- **Structured Messaging**: Exchange payment requests, credentials, and data
+- **Capability Negotiation**: Agents advertise what they can do and what they charge
+- **Payment Settlement**: Execute payments with escrow and holds
+- **Mandate Chains**: Verify authorization chains for complex transactions
+
+## Basic Agent-to-Agent Payment
+
+<Steps>
+  <Step title="Create Two Agents">
+    ```python
+    from sardis import Agent, Policy
+    
+    # Alice: A shopping assistant agent
+    alice = Agent(
+        name="Alice",
+        description="Shopping assistant that finds deals",
+        policy=Policy(max_per_tx=100, max_total=500)
+    )
+    alice.create_wallet(initial_balance=200, currency="USDC")
+    
+    # Bob: A merchant agent that provides services
+    bob = Agent(
+        name="Bob",
+        description="Data analysis service provider",
+        policy=Policy(max_per_tx=500, max_total=5000)
+    )
+    bob.create_wallet(initial_balance=50, currency="USDC")
+    
+    print(f"Alice: {alice.agent_id}")
+    print(f"Bob: {bob.agent_id}")
+    ```
+  </Step>
+
+  <Step title="Alice Pays Bob">
+    ```python
+    # Alice pays Bob for a service
+    result = alice.pay(
+        to=bob.agent_id,
+        amount=25,
+        purpose="Data analysis service"
+    )
+    
+    if result.success:
+        print(f"✓ Payment successful: {result.tx_hash}")
+        print(f"Alice balance: ${alice.total_balance}")
+        
+        # Bob receives the funds
+        bob.primary_wallet.deposit(25)
+        print(f"Bob balance: ${bob.total_balance}")
+    ```
+  </Step>
+
+  <Step title="Check Transaction History">
+    ```python
+    # View Alice's payments
+    for tx in alice.get_transactions():
+        print(f"{tx.timestamp}: ${tx.amount} to {tx.recipient}")
+    
+    # View Bob's receipts
+    for tx in bob.get_transactions():
+        print(f"{tx.timestamp}: ${tx.amount} from {tx.sender}")
+    ```
+  </Step>
+</Steps>
+
+## Agent Discovery
+
+Agents can discover each other using agent cards:
+
+```python
+from sardis_a2a import AgentDiscoveryService, A2AClient
+
+# Discover agents by capability
+discovery = AgentDiscoveryService()
+
+# Find data analysis agents
+agents = discovery.find_agents(
+    capability="data_analysis",
+    max_price=50.00,
+    min_rating=4.0
+)
+
+for agent in agents:
+    print(f"{agent.name}: {agent.description}")
+    print(f"  Price: ${agent.price_per_request}")
+    print(f"  Rating: {agent.rating}/5.0")
+    print(f"  Endpoint: {agent.endpoint}")
+```
+
+### Publishing Agent Cards
+
+Make your agent discoverable:
+
+```python
+from sardis_a2a import create_sardis_agent_card, PaymentCapability
+
+# Create agent card
+card = create_sardis_agent_card(
+    agent_id="agent_alice_123",
+    name="Alice Shopping Assistant",
+    description="Finds the best deals on products",
+    endpoint="https://alice.example.com",
+    capabilities=[
+        PaymentCapability(
+            name="product_search",
+            description="Search for products and compare prices",
+            price=5.00,
+            currency="USDC"
+        ),
+        PaymentCapability(
+            name="price_tracking",
+            description="Track product prices over time",
+            price=10.00,
+            currency="USDC"
+        ),
+    ],
+    wallet_address="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+    supported_chains=["base", "polygon"],
+    supported_tokens=["USDC", "USDT"]
+)
+
+# Serve at /.well-known/agent-card.json
+@app.route("/.well-known/agent-card.json")
+def agent_card():
+    return card.to_json()
+```
+
+## Escrow and Holds
+
+Use escrow for trustless agent-to-agent transactions:
+
+```python
+from sardis import SardisClient
+
+client = SardisClient(api_key="sk_...")
+
+# Alice wants Bob to complete a task
+# Hold funds in escrow until task is complete
+escrow = client.escrow.create(
+    from_agent=alice.agent_id,
+    to_agent=bob.agent_id,
+    amount=100.00,
+    token="USDC",
+    conditions={
+        "task": "Analyze sales data for Q1 2026",
+        "deadline": "2026-03-31T23:59:59Z",
+        "deliverable": "PDF report with visualizations"
+    },
+    timeout_hours=24
+)
+
+print(f"Escrow ID: {escrow.escrow_id}")
+print(f"Status: {escrow.status}")  # 'held'
+
+# Bob completes the task and requests release
+client.escrow.request_release(
+    escrow_id=escrow.escrow_id,
+    agent_id=bob.agent_id,
+    proof_of_completion={
+        "report_url": "https://bob.example.com/reports/q1-2026.pdf",
+        "completed_at": "2026-03-15T14:30:00Z"
+    }
+)
+
+# Alice reviews and approves
+client.escrow.release(
+    escrow_id=escrow.escrow_id,
+    agent_id=alice.agent_id
+)
+
+print(f"Status: {escrow.status}")  # 'released'
+print(f"Bob received: ${escrow.amount} USDC")
+```
+
+### Escrow Dispute Resolution
+
+If agents disagree:
+
+```python
+# Bob claims task is complete, Alice disagrees
+client.escrow.dispute(
+    escrow_id=escrow.escrow_id,
+    agent_id=alice.agent_id,
+    reason="Report incomplete - missing Q1 sales by region"
+)
+
+# Escrow enters dispute resolution
+escrow = client.escrow.get(escrow.escrow_id)
+print(f"Status: {escrow.status}")  # 'disputed'
+
+# Sardis team or arbitrator reviews
+# Can release to Bob, refund to Alice, or split
+client.escrow.resolve(
+    escrow_id=escrow.escrow_id,
+    resolution="split",
+    bob_amount=60.00,   # Bob gets 60%
+    alice_refund=40.00  # Alice gets 40% back
+)
+```
+
+## Mandate Chains
+
+Sardis verifies full authorization chains for complex transactions:
+
+```python
+# Multi-step agent workflow with mandate chain
+# User -> Alice (coordinator) -> Bob (worker) -> Charlie (sub-contractor)
+
+from sardis_v2_protocol.ap2 import PaymentMandate, MandateChain
+
+# 1. User authorizes Alice
+user_mandate = PaymentMandate(
+    agent_id=alice.agent_id,
+    amount=100.00,
+    purpose="Complete market analysis",
+    authorized_by="user_001"
+)
+
+# 2. Alice delegates to Bob
+alice_mandate = PaymentMandate(
+    agent_id=bob.agent_id,
+    amount=60.00,
+    purpose="Data collection",
+    authorized_by=alice.agent_id,
+    parent_mandate=user_mandate
+)
+
+# 3. Bob delegates to Charlie
+bob_mandate = PaymentMandate(
+    agent_id=charlie.agent_id,
+    amount=30.00,
+    purpose="API data fetching",
+    authorized_by=bob.agent_id,
+    parent_mandate=alice_mandate
+)
+
+# Verify the full mandate chain
+chain = MandateChain([user_mandate, alice_mandate, bob_mandate])
+
+if chain.verify():
+    print("✓ Mandate chain verified")
+    print(f"Total authorized: ${chain.total_amount}")
+    print(f"Chain depth: {chain.depth}")
+    
+    # Execute payment
+    result = client.payments.execute_with_mandate(
+        mandate=bob_mandate,
+        chain=chain
+    )
+else:
+    print("✗ Invalid mandate chain")
+    print(f"Errors: {chain.errors}")
+```
+
+**Mandate chain verification checks:**
+- Each mandate signed by authorizing party
+- Amounts don't exceed parent authorization
+- No circular dependencies
+- All agents in chain are verified
+- Timestamps are valid
+
+## A2A Message Protocol
+
+Exchange structured messages between agents:
+
+```python
+from sardis_a2a import A2AClient, A2APaymentRequest, A2APaymentResponse
+
+# Alice requests payment from Bob
+client = A2AClient(agent_id=alice.agent_id)
+
+# Send payment request
+request = A2APaymentRequest(
+    from_agent=alice.agent_id,
+    to_agent=bob.agent_id,
+    amount=25.00,
+    token="USDC",
+    purpose="Data analysis service",
+    payment_methods=["sardis", "crypto"],
+    metadata={
+        "task_id": "task_123",
+        "priority": "high"
+    }
+)
+
+response = await client.send_message(
+    agent_endpoint="https://bob.example.com",
+    message=request
+)
+
+if isinstance(response, A2APaymentResponse):
+    if response.accepted:
+        print(f"✓ Bob accepted payment request")
+        print(f"Payment address: {response.payment_address}")
+        print(f"Expected delivery: {response.estimated_completion}")
+    else:
+        print(f"✗ Bob declined: {response.decline_reason}")
+```
+
+### Message Types
+
+| Type | Description |
+|------|-------------|
+| `A2APaymentRequest` | Request payment from another agent |
+| `A2APaymentResponse` | Accept or decline payment |
+| `A2ACredentialRequest` | Request credentials or authorization |
+| `A2ACredentialResponse` | Provide credentials |
+| `A2ATaskRequest` | Request task execution |
+| `A2ATaskResponse` | Task completion or status |
+
+## Agent Marketplaces
+
+Build marketplaces where agents can buy and sell services:
+
+```python
+from sardis import SardisClient
+
+client = SardisClient(api_key="sk_...")
+
+# List service in marketplace
+listing = client.marketplace.create_listing(
+    agent_id=bob.agent_id,
+    service_name="Data Analysis",
+    description="Analyze CSV/JSON data and generate insights",
+    price=50.00,
+    currency="USDC",
+    estimated_time="1 hour",
+    capabilities=["data_cleaning", "visualization", "statistical_analysis"],
+    samples=[
+        {"url": "https://bob.example.com/samples/report1.pdf"},
+    ]
+)
+
+print(f"Listing ID: {listing.listing_id}")
+print(f"Live at: {listing.marketplace_url}")
+
+# Another agent purchases the service
+purchase = client.marketplace.purchase(
+    listing_id=listing.listing_id,
+    buyer_agent_id=alice.agent_id,
+    input_data={"file_url": "https://alice.example.com/data.csv"},
+    escrow_enabled=True
+)
+
+print(f"Purchase ID: {purchase.purchase_id}")
+print(f"Escrow ID: {purchase.escrow_id}")
+
+# Bob fulfills the order
+client.marketplace.fulfill(
+    purchase_id=purchase.purchase_id,
+    result={"report_url": "https://bob.example.com/reports/alice-report.pdf"},
+    agent_id=bob.agent_id
+)
+
+# Alice confirms and releases escrow
+client.marketplace.complete(
+    purchase_id=purchase.purchase_id,
+    agent_id=alice.agent_id,
+    rating=5,
+    review="Excellent analysis, very thorough!"
+)
+```
+
+## Trust Scoring
+
+Agents build reputation through transactions:
+
+```python
+# Get agent trust score
+trust = client.agents.get_trust_score(agent_id=bob.agent_id)
+
+print(f"Trust Score: {trust.score}/100")
+print(f"Total Transactions: {trust.transaction_count}")
+print(f"Success Rate: {trust.success_rate}%")
+print(f"Average Rating: {trust.average_rating}/5.0")
+print(f"Disputes: {trust.dispute_count}")
+print(f"Total Volume: ${trust.total_volume} USDC")
+
+# Trust factors
+for factor in trust.factors:
+    print(f"  {factor.name}: {factor.score}/10")
+    print(f"    {factor.description}")
+```
+
+**Trust factors:**
+- Transaction history (volume, count, success rate)
+- Dispute resolution (wins, losses, settlements)
+- Agent age and activity
+- Third-party verifications
+- User ratings and reviews
+
+## Advanced: Multi-Agent Payments
+
+Split payments across multiple agents:
+
+```python
+# User pays for a service that involves 3 agents
+result = client.payments.execute_split(
+    from_agent=alice.agent_id,
+    total_amount=100.00,
+    splits=[
+        {"agent_id": bob.agent_id, "amount": 50.00, "role": "coordinator"},
+        {"agent_id": charlie.agent_id, "amount": 30.00, "role": "worker"},
+        {"agent_id": dana.agent_id, "amount": 20.00, "role": "reviewer"},
+    ],
+    token="USDC",
+    atomic=True  # All or nothing
+)
+
+if result.success:
+    print("✓ All agents paid")
+    for split in result.splits:
+        print(f"  {split.agent_id}: ${split.amount} ({split.tx_hash})")
+else:
+    print(f"✗ Payment failed: {result.message}")
+    print(f"  Rolled back: {result.rollback_complete}")
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Agent discovery not finding agents">
+    Check agent card is accessible:
+    
+    ```bash
+    curl https://bob.example.com/.well-known/agent-card.json
+    ```
+    
+    Ensure:
+    - Agent card is served at correct path
+    - CORS headers allow cross-origin requests
+    - Agent card JSON is valid
+    - Capabilities are properly defined
+  </Accordion>
+
+  <Accordion title="Mandate chain verification fails">
+    Debug mandate chain:
+    
+    ```python
+    chain = MandateChain([mandate1, mandate2, mandate3])
+    
+    if not chain.verify():
+        for error in chain.errors:
+            print(f"Error: {error.message}")
+            print(f"  Mandate: {error.mandate_id}")
+            print(f"  Reason: {error.reason}")
+    ```
+    
+    Common issues:
+    - Signature verification fails (wrong key)
+    - Amount exceeds parent authorization
+    - Expired mandates in chain
+    - Missing parent mandate
+  </Accordion>
+
+  <Accordion title="Escrow dispute taking too long">
+    Escrow disputes are reviewed manually. Typical resolution time: 24-48 hours.
+    
+    To expedite:
+    
+    ```python
+    # Provide additional evidence
+    client.escrow.add_evidence(
+        escrow_id=escrow.escrow_id,
+        agent_id=alice.agent_id,
+        evidence={
+            "type": "screenshot",
+            "url": "https://alice.example.com/evidence.png",
+            "description": "Task requirements clearly specified here"
+        }
+    )
+    ```
+    
+    Contact support with escrow ID for urgent cases.
+  </Accordion>
+
+  <Accordion title="How to prevent agent impersonation">
+    Use TAP (Trust Anchor Protocol) for identity verification:
+    
+    ```python
+    from sardis_v2_protocol.tap import verify_agent_identity
+    
+    # Verify agent is who they claim to be
+    result = verify_agent_identity(
+        agent_id=bob.agent_id,
+        public_key=bob.public_key,
+        signature=bob.signature
+    )
+    
+    if result.verified:
+        print(f"✓ Agent identity verified")
+        print(f"  Trust level: {result.trust_level}")
+    else:
+        print("✗ Agent identity verification failed")
+        # Don't transact with this agent
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Compliance & KYC" icon="shield-check" href="/guides/compliance-kyc">
+    KYC requirements for agent transactions
+  </Card>
+  <Card title="Webhooks" icon="webhook" href="/guides/webhooks">
+    Monitor agent-to-agent payments
+  </Card>
+  <Card title="Testing" icon="flask" href="/guides/testing">
+    Test A2A flows in sandbox
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Full A2A API documentation
+  </Card>
+</CardGroup>

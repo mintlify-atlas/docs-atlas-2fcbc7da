@@ -1,0 +1,587 @@
+---
+title: Async Patterns
+description: Async/await usage and concurrent operations in Sardis SDKs
+---
+
+# Async Patterns
+
+Both Sardis SDKs provide full async/await support for high-performance, concurrent operations.
+
+## Python Async Client
+
+### Basic Usage
+
+```python
+import asyncio
+from sardis_sdk import AsyncSardisClient
+
+async def main():
+    async with AsyncSardisClient(api_key="sk_live_...") as client:
+        # All operations are awaited
+        agent = await client.agents.create(name="my-agent")
+        wallet = await client.wallets.create(
+            agent_id=agent.agent_id,
+            chain="base",
+            currency="USDC"
+        )
+        result = await client.payments.send(
+            wallet_id=wallet.wallet_id,
+            to="merchant.eth",
+            amount="50.00",
+            token="USDC"
+        )
+        print(f"Payment sent: {result.tx_hash}")
+
+asyncio.run(main())
+```
+
+### Context Manager Pattern
+
+Recommended for automatic connection cleanup:
+
+```python
+from sardis_sdk import AsyncSardisClient
+
+async def process_payments():
+    # Automatically manages connection pool lifecycle
+    async with AsyncSardisClient(api_key="sk_live_...") as client:
+        agents = await client.agents.list()
+        # Client automatically closes when exiting context
+```
+
+### Manual Resource Management
+
+```python
+from sardis_sdk import AsyncSardisClient
+
+async def manual_lifecycle():
+    client = AsyncSardisClient(api_key="sk_live_...")
+    
+    try:
+        agents = await client.agents.list()
+        # ... do work ...
+    finally:
+        await client.close()  # Explicitly close
+```
+
+## Concurrent Operations
+
+### Python - Parallel Requests
+
+Execute multiple API calls concurrently:
+
+```python
+import asyncio
+from sardis_sdk import AsyncSardisClient
+
+async def fetch_all_wallets(client, agent_ids):
+    # Create tasks for concurrent execution
+    tasks = [
+        client.wallets.list(agent_id=agent_id)
+        for agent_id in agent_ids
+    ]
+    
+    # Wait for all to complete
+    results = await asyncio.gather(*tasks)
+    
+    # Flatten results
+    all_wallets = []
+    for wallet_list in results:
+        all_wallets.extend(wallet_list)
+    
+    return all_wallets
+
+async def main():
+    async with AsyncSardisClient(api_key="sk_live_...") as client:
+        agent_ids = ["agent_1", "agent_2", "agent_3"]
+        wallets = await fetch_all_wallets(client, agent_ids)
+        print(f"Found {len(wallets)} wallets across {len(agent_ids)} agents")
+
+asyncio.run(main())
+```
+
+### Python - Batch Payments
+
+```python
+import asyncio
+from sardis_sdk import AsyncSardisClient
+
+async def process_batch_payments(client, payments):
+    """Process multiple payments concurrently."""
+    
+    async def send_payment(payment):
+        try:
+            result = await client.payments.send(
+                wallet_id=payment["wallet_id"],
+                to=payment["recipient"],
+                amount=payment["amount"],
+                token="USDC"
+            )
+            return {"success": True, "tx_hash": result.tx_hash}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    # Execute all payments concurrently
+    tasks = [send_payment(payment) for payment in payments]
+    results = await asyncio.gather(*tasks)
+    
+    # Count successes and failures
+    successes = sum(1 for r in results if r["success"])
+    failures = len(results) - successes
+    
+    print(f"Processed {len(payments)} payments: {successes} succeeded, {failures} failed")
+    return results
+
+async def main():
+    payments = [
+        {"wallet_id": "wallet_1", "recipient": "merchant_a", "amount": "25.00"},
+        {"wallet_id": "wallet_2", "recipient": "merchant_b", "amount": "30.00"},
+        {"wallet_id": "wallet_3", "recipient": "merchant_c", "amount": "15.00"},
+    ]
+    
+    async with AsyncSardisClient(api_key="sk_live_...") as client:
+        results = await process_batch_payments(client, payments)
+        for i, result in enumerate(results):
+            if result["success"]:
+                print(f"Payment {i+1}: {result['tx_hash']}")
+            else:
+                print(f"Payment {i+1} failed: {result['error']}")
+
+asyncio.run(main())
+```
+
+### Python - Error Handling with Gather
+
+```python
+import asyncio
+from sardis_sdk import AsyncSardisClient, PaymentError
+
+async def safe_batch_payments(client, payments):
+    """Process batch payments with proper error handling."""
+    
+    async def send_with_error_handling(payment):
+        try:
+            result = await client.payments.send(**payment)
+            return {"success": True, "result": result}
+        except PaymentError as e:
+            return {"success": False, "error": str(e), "code": e.code}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    # return_exceptions=True prevents one failure from stopping others
+    tasks = [send_with_error_handling(p) for p in payments]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    return results
+```
+
+### Python - Rate Limiting with Semaphore
+
+Limit concurrent operations:
+
+```python
+import asyncio
+from sardis_sdk import AsyncSardisClient
+
+async def rate_limited_operations(client, operations, max_concurrent=5):
+    """Execute operations with concurrency limit."""
+    semaphore = asyncio.Semaphore(max_concurrent)
+    
+    async def execute_with_limit(operation):
+        async with semaphore:
+            return await operation(client)
+    
+    tasks = [execute_with_limit(op) for op in operations]
+    return await asyncio.gather(*tasks)
+
+async def main():
+    async with AsyncSardisClient(api_key="sk_live_...") as client:
+        # Define operations
+        operations = [
+            lambda c: c.wallets.get(f"wallet_{i}")
+            for i in range(20)
+        ]
+        
+        # Execute with max 5 concurrent requests
+        results = await rate_limited_operations(client, operations, max_concurrent=5)
+        print(f"Fetched {len(results)} wallets")
+
+asyncio.run(main())
+```
+
+## TypeScript Async Patterns
+
+TypeScript SDK is async by default:
+
+### Basic Usage
+
+```typescript
+import { SardisClient } from '@sardis/sdk';
+
+const client = new SardisClient({ apiKey: 'sk_live_...' });
+
+// All methods return Promises
+const agent = await client.agents.create({ name: 'my-agent' });
+const wallet = await client.wallets.create({
+  agent_id: agent.agent_id,
+  chain: 'base',
+  currency: 'USDC',
+});
+const result = await client.payments.executeMandate({
+  wallet_id: wallet.wallet_id,
+  mandate: { /* ... */ },
+});
+```
+
+### Parallel Requests
+
+```typescript
+import { SardisClient } from '@sardis/sdk';
+
+const client = new SardisClient({ apiKey: 'sk_live_...' });
+
+async function fetchAllWallets(agentIds: string[]) {
+  // Execute all requests in parallel
+  const results = await Promise.all(
+    agentIds.map(agentId => client.wallets.list({ agent_id: agentId }))
+  );
+  
+  // Flatten results
+  return results.flat();
+}
+
+const wallets = await fetchAllWallets(['agent_1', 'agent_2', 'agent_3']);
+console.log(`Found ${wallets.length} wallets`);
+```
+
+### Batch Payments
+
+```typescript
+import { SardisClient } from '@sardis/sdk';
+
+interface Payment {
+  wallet_id: string;
+  recipient: string;
+  amount: string;
+}
+
+async function processBatchPayments(
+  client: SardisClient,
+  payments: Payment[]
+) {
+  const results = await Promise.allSettled(
+    payments.map(payment =>
+      client.payments.executeMandate({
+        wallet_id: payment.wallet_id,
+        mandate: {
+          intent: {
+            amount: payment.amount,
+            currency: 'USDC',
+            recipient: payment.recipient,
+          },
+        },
+      })
+    )
+  );
+
+  const successes = results.filter(r => r.status === 'fulfilled');
+  const failures = results.filter(r => r.status === 'rejected');
+
+  console.log(`${successes.length} succeeded, ${failures.length} failed`);
+  return results;
+}
+```
+
+### Error Handling with Promise.allSettled
+
+```typescript
+import { SardisClient, PaymentError } from '@sardis/sdk';
+
+async function safeBatchOperations(operations: Promise<any>[]) {
+  // Promise.allSettled never rejects - returns status for each
+  const results = await Promise.allSettled(operations);
+  
+  results.forEach((result, i) => {
+    if (result.status === 'fulfilled') {
+      console.log(`Operation ${i}: Success`, result.value);
+    } else {
+      console.error(`Operation ${i}: Failed`, result.reason);
+    }
+  });
+  
+  return results;
+}
+```
+
+### Rate Limiting with p-limit
+
+```typescript
+import pLimit from 'p-limit';
+import { SardisClient } from '@sardis/sdk';
+
+async function rateLimitedOperations(
+  client: SardisClient,
+  operations: Array<() => Promise<any>>,
+  maxConcurrent = 5
+) {
+  const limit = pLimit(maxConcurrent);
+  
+  const limitedOperations = operations.map(op => limit(op));
+  return Promise.all(limitedOperations);
+}
+
+// Usage
+const operations = Array.from({ length: 20 }, (_, i) => 
+  () => client.wallets.get(`wallet_${i}`)
+);
+
+const results = await rateLimitedOperations(client, operations, 5);
+```
+
+### Request Cancellation
+
+```typescript
+import { SardisClient, AbortError } from '@sardis/sdk';
+
+const client = new SardisClient({ apiKey: 'sk_live_...' });
+const controller = new AbortController();
+
+// Cancel after 5 seconds
+setTimeout(() => controller.abort(), 5000);
+
+try {
+  const result = await client.payments.executeMandate(
+    { /* ... */ },
+    { signal: controller.signal }
+  );
+} catch (error) {
+  if (error instanceof AbortError) {
+    console.log('Request was cancelled');
+  }
+}
+```
+
+### Timeout Pattern
+
+```typescript
+import { SardisClient, TimeoutError } from '@sardis/sdk';
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number
+): Promise<T> {
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => reject(new TimeoutError('Operation timed out', timeoutMs)), timeoutMs);
+  });
+  
+  return Promise.race([promise, timeoutPromise]);
+}
+
+// Usage
+try {
+  const result = await withTimeout(
+    client.payments.executeMandate({ /* ... */ }),
+    10000  // 10 second timeout
+  );
+} catch (error) {
+  if (error instanceof TimeoutError) {
+    console.error('Payment timed out');
+  }
+}
+```
+
+## Streaming and Pagination
+
+### Python - Async Iterator
+
+```python
+import asyncio
+from sardis_sdk import AsyncSardisClient
+
+async def stream_all_agents(client):
+    """Stream all agents using async pagination."""
+    offset = 0
+    limit = 100
+    
+    while True:
+        agents = await client.agents.list(limit=limit, offset=offset)
+        
+        if not agents:
+            break
+        
+        for agent in agents:
+            yield agent
+        
+        if len(agents) < limit:
+            break
+        
+        offset += limit
+
+async def main():
+    async with AsyncSardisClient(api_key="sk_live_...") as client:
+        async for agent in stream_all_agents(client):
+            print(f"Agent: {agent.name}")
+
+asyncio.run(main())
+```
+
+### Python - Bulk Operations
+
+```python
+from sardis_sdk import AsyncSardisClient, bulk_execute_async, BulkConfig
+
+async def main():
+    async with AsyncSardisClient(api_key="sk_live_...") as client:
+        # Define operations
+        operations = [
+            ("wallets.get", {"wallet_id": f"wallet_{i}"})
+            for i in range(100)
+        ]
+        
+        # Execute in bulk with concurrency control
+        result = await bulk_execute_async(
+            client,
+            operations,
+            config=BulkConfig(
+                max_concurrency=10,
+                stop_on_error=False,
+                retry_failed=True,
+            )
+        )
+        
+        print(f"Success: {result.summary.success_count}")
+        print(f"Failed: {result.summary.failure_count}")
+        print(f"Duration: {result.summary.duration_seconds}s")
+
+asyncio.run(main())
+```
+
+### TypeScript - Pagination Iterator
+
+```typescript
+import { SardisClient } from '@sardis/sdk';
+
+const client = new SardisClient({ apiKey: 'sk_live_...' });
+
+// Use built-in pagination
+for await (const agent of client.paginate(
+  (params) => client.agents.list(params),
+  { limit: 100 }
+)) {
+  console.log('Agent:', agent.name);
+}
+
+// Or collect all results
+const allAgents = await client.paginateAll(
+  (params) => client.agents.list(params)
+);
+console.log(`Total agents: ${allAgents.length}`);
+```
+
+### TypeScript - Batch Operations
+
+```typescript
+import { SardisClient } from '@sardis/sdk';
+
+const client = new SardisClient({ apiKey: 'sk_live_...' });
+
+const results = await client.batch([
+  { method: 'GET', path: '/api/v2/wallets/wallet_1' },
+  { method: 'GET', path: '/api/v2/wallets/wallet_2' },
+  { method: 'GET', path: '/api/v2/wallets/wallet_3' },
+], { concurrency: 3, stopOnError: false });
+
+results.forEach((result, i) => {
+  if (result.success) {
+    console.log(`Wallet ${i+1}:`, result.data);
+  } else {
+    console.error(`Wallet ${i+1} failed:`, result.error);
+  }
+});
+```
+
+## Best Practices
+
+### 1. Use Context Managers (Python)
+
+```python
+# Good - automatic cleanup
+async with AsyncSardisClient(api_key="...") as client:
+    await client.agents.list()
+
+# Avoid - manual cleanup
+client = AsyncSardisClient(api_key="...")
+result = await client.agents.list()
+await client.close()  # Easy to forget!
+```
+
+### 2. Limit Concurrency
+
+```python
+# Good - controlled concurrency
+semaphore = asyncio.Semaphore(5)
+async with semaphore:
+    await client.payments.send(...)
+
+# Bad - unlimited concurrent requests
+await asyncio.gather(*[client.payments.send(...) for _ in range(1000)])
+```
+
+### 3. Handle Errors Gracefully
+
+```python
+# Good - handle errors in concurrent operations
+results = await asyncio.gather(*tasks, return_exceptions=True)
+for result in results:
+    if isinstance(result, Exception):
+        handle_error(result)
+
+# Bad - one error stops everything
+results = await asyncio.gather(*tasks)  # Raises on first error
+```
+
+### 4. Use Timeouts
+
+```python
+# Good - set timeouts
+try:
+    result = await asyncio.wait_for(
+        client.payments.send(...),
+        timeout=30.0
+    )
+except asyncio.TimeoutError:
+    print("Operation timed out")
+
+# Bad - no timeout (could hang forever)
+result = await client.payments.send(...)
+```
+
+### 5. Pool Connections Efficiently
+
+```python
+# Good - reuse client across requests
+async with AsyncSardisClient(api_key="...") as client:
+    for payment in payments:
+        await client.payments.send(**payment)
+
+# Bad - create new client per request
+for payment in payments:
+    async with AsyncSardisClient(api_key="...") as client:
+        await client.payments.send(**payment)
+```
+
+## Performance Tips
+
+1. **Batch similar operations** - Group related API calls together
+2. **Use connection pooling** - Reuse the same client instance
+3. **Limit concurrency** - Don't overwhelm the API or your system
+4. **Handle errors per-operation** - Use `return_exceptions=True` or `Promise.allSettled`
+5. **Set appropriate timeouts** - Prevent hanging requests
+6. **Monitor memory usage** - Collect results in batches for large datasets
+7. **Use streaming for large datasets** - Don't load everything into memory
+
+## See Also
+
+- [Python Reference](/sdks/python-reference) - Full async API reference
+- [TypeScript Reference](/sdks/typescript-reference) - Full TypeScript API reference  
+- [Error Handling](/sdks/error-handling) - Error handling in async code

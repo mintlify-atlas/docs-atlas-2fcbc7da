@@ -1,0 +1,118 @@
+---
+title: 'Webhooks'
+description: 'Real-time event notifications'
+---
+
+## Overview
+
+Webhooks notify your application of events in real-time.
+
+## Create Webhook
+
+```bash cURL
+curl -X POST https://api.sardis.sh/api/v2/webhooks \
+  -H "Authorization: Bearer sk_live_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://your-app.com/webhooks/sardis",
+    "events": ["payment.completed", "payment.failed", "hold.created"]
+  }'
+```
+
+```python Python
+webhook = client.webhooks.create(
+    url="https://your-app.com/webhooks/sardis",
+    events=["payment.completed", "payment.failed"]
+)
+
+print(f"Webhook Secret: {webhook.secret}")
+```
+
+<Warning>
+Store the webhook secret securely - it's shown only once!
+</Warning>
+
+## Event Types
+
+### Payment Events
+- `payment.pending`
+- `payment.completed`
+- `payment.failed`
+
+### Wallet Events
+- `wallet.created`
+- `wallet.frozen`
+- `wallet.unfrozen`
+
+### Hold Events
+- `hold.created`
+- `hold.captured`
+- `hold.voided`
+
+### Card Events
+- `card.issued`
+- `card.transaction.authorized`
+- `card.transaction.settled`
+
+### Compliance Events
+- `compliance.flagged`
+- `compliance.approved`
+
+## Webhook Payload
+
+```json
+{
+  "event": "payment.completed",
+  "data": {
+    "tx_id": "tx_abc123",
+    "wallet_id": "wallet_abc123",
+    "amount": "100.00",
+    "token": "USDC",
+    "chain": "base",
+    "tx_hash": "0xabc123...",
+    "completed_at": "2025-03-03T10:00:00Z"
+  },
+  "created_at": "2025-03-03T10:00:00Z",
+  "webhook_id": "whk_abc123"
+}
+```
+
+## Verify Webhook Signature
+
+```python
+import hmac
+import hashlib
+
+def verify_webhook(payload, signature, secret):
+    expected = hmac.new(
+        secret.encode(),
+        payload.encode(),
+        hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(signature, expected)
+
+# In your webhook handler
+@app.post("/webhooks/sardis")
+def handle_webhook(request):
+    signature = request.headers.get("X-Sardis-Signature")
+    payload = request.body
+    
+    if not verify_webhook(payload, signature, WEBHOOK_SECRET):
+        return {"error": "Invalid signature"}, 401
+    
+    # Process webhook...
+```
+
+## List Webhooks
+
+```bash cURL
+curl https://api.sardis.sh/api/v2/webhooks \
+  -H "Authorization: Bearer sk_live_your_api_key"
+```
+
+## Delete Webhook
+
+```bash cURL
+curl -X DELETE https://api.sardis.sh/api/v2/webhooks/whk_abc123 \
+  -H "Authorization: Bearer sk_live_your_api_key"
+```

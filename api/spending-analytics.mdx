@@ -1,0 +1,203 @@
+---
+title: 'Spending Analytics'
+description: 'Analytics and insights on agent spending'
+---
+
+## Overview
+
+Analyze agent spending patterns, detect anomalies, and track budget utilization.
+
+## Spending Over Time
+
+```bash cURL
+curl 'https://api.sardis.sh/api/v2/analytics/spending-over-time?period=daily&days=30' \
+  -H "Authorization: Bearer sk_live_your_api_key"
+```
+
+```python Python
+analytics = client.analytics.spending_over_time(
+    period="daily",
+    days=30
+)
+
+for datapoint in analytics.data:
+    print(f"{datapoint.date}: ${datapoint.amount}")
+```
+
+### Response
+
+```json
+{
+  "period": "daily",
+  "data": [
+    {
+      "date": "2025-03-01",
+      "amount": 1250.50,
+      "count": 15
+    },
+    {
+      "date": "2025-03-02",
+      "amount": 890.25,
+      "count": 12
+    }
+  ],
+  "total": 2140.75,
+  "average": 1070.38
+}
+```
+
+## Spending by Agent
+
+```bash cURL
+curl 'https://api.sardis.sh/api/v2/analytics/spending-by-agent?days=30' \
+  -H "Authorization: Bearer sk_live_your_api_key"
+```
+
+### Response
+
+```json
+{
+  "agents": [
+    {
+      "agent_id": "agent_abc123",
+      "agent_name": "shopping-agent",
+      "total": 5250.00,
+      "transaction_count": 42,
+      "average": 125.00
+    }
+  ],
+  "total": 5250.00
+}
+```
+
+## Top Merchants
+
+```bash cURL
+curl 'https://api.sardis.sh/api/v2/analytics/top-merchants?limit=10' \
+  -H "Authorization: Bearer sk_live_your_api_key"
+```
+
+### Response
+
+```json
+{
+  "merchants": [
+    {
+      "merchant": "aws.amazon.com",
+      "amount": 2500.00,
+      "count": 15,
+      "percentage": 47.6
+    },
+    {
+      "merchant": "openai.com",
+      "amount": 1200.00,
+      "count": 24,
+      "percentage": 22.9
+    }
+  ],
+  "total": 5250.00
+}
+```
+
+## Budget Utilization
+
+```bash cURL
+curl https://api.sardis.sh/api/v2/analytics/budget-utilization \
+  -H "Authorization: Bearer sk_live_your_api_key"
+```
+
+### Response
+
+```json
+{
+  "items": [
+    {
+      "agent_id": "agent_abc123",
+      "agent_name": "shopping-agent",
+      "spent": 1250.00,
+      "budget": 2000.00,
+      "utilization": 62.5,
+      "remaining": 750.00
+    }
+  ]
+}
+```
+
+## Anomaly Detection
+
+Detect unusual spending patterns:
+
+```bash cURL
+curl 'https://api.sardis.sh/api/v2/analytics/anomalies?confidence=0.95' \
+  -H "Authorization: Bearer sk_live_your_api_key"
+```
+
+### Response
+
+```json
+{
+  "anomalies": [
+    {
+      "timestamp": "2025-03-03T10:00:00Z",
+      "agent_id": "agent_abc123",
+      "amount": 5000.00,
+      "merchant": "unknown-merchant.com",
+      "reason": "Amount significantly exceeds normal spending pattern",
+      "confidence": 0.98,
+      "z_score": 3.5
+    }
+  ],
+  "total": 1
+}
+```
+
+## Policy Blocks
+
+Track transactions blocked by policies:
+
+```bash cURL
+curl https://api.sardis.sh/api/v2/analytics/policy-blocks \
+  -H "Authorization: Bearer sk_live_your_api_key"
+```
+
+### Response
+
+```json
+{
+  "blocks": [
+    {
+      "timestamp": "2025-03-03T09:30:00Z",
+      "agent_id": "agent_abc123",
+      "amount": 1000.00,
+      "merchant": "gambling-site.com",
+      "reason": "Blocked category: gambling"
+    }
+  ],
+  "total_blocks": 5,
+  "block_rate": 2.5,
+  "total_transactions": 200
+}
+```
+
+## Summary Stats
+
+```bash cURL
+curl https://api.sardis.sh/api/v2/analytics/summary \
+  -H "Authorization: Bearer sk_live_your_api_key"
+```
+
+### Response
+
+```json
+{
+  "total_spend": 12500.50,
+  "avg_daily_spend": 416.68,
+  "active_agents": 5,
+  "total_transactions": 142,
+  "successful_transactions": 137,
+  "blocked_transactions": 5,
+  "block_rate": 3.52,
+  "top_merchant": "aws.amazon.com",
+  "largest_transaction": 2500.00
+}
+```

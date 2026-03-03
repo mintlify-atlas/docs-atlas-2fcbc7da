@@ -1,0 +1,121 @@
+---
+title: 'Transactions'
+description: 'Query transaction status and chain information'
+---
+
+## Overview
+
+Query blockchain transaction status, gas estimates, and supported chains.
+
+## Get Transaction Status
+
+```bash cURL
+curl https://api.sardis.sh/api/v2/transactions/0xabc123.../status?chain=base \
+  -H "Authorization: Bearer sk_live_your_api_key"
+```
+
+### Response
+
+```json
+{
+  "tx_hash": "0xabc123...",
+  "chain": "base",
+  "status": "confirmed",
+  "block_number": 12345678,
+  "confirmations": 15,
+  "explorer_url": "https://basescan.org/tx/0xabc123..."
+}
+```
+
+## Estimate Gas
+
+```bash cURL
+curl -X POST https://api.sardis.sh/api/v2/transactions/estimate-gas \
+  -H "Authorization: Bearer sk_live_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "chain": "base",
+    "token": "USDC",
+    "amount": "100.00",
+    "destination": "0x1234..."
+  }'
+```
+
+### Response
+
+```json
+{
+  "gas_limit": 65000,
+  "gas_price_gwei": "0.05",
+  "max_fee_gwei": "0.10",
+  "max_priority_fee_gwei": "0.01",
+  "estimated_cost_wei": 3250000000000000,
+  "estimated_cost_eth": "0.00325"
+}
+```
+
+## List Supported Chains
+
+```bash cURL
+curl https://api.sardis.sh/api/v2/transactions/chains \
+  -H "Authorization: Bearer sk_live_your_api_key"
+```
+
+### Response
+
+```json
+{
+  "chains": [
+    {
+      "name": "base",
+      "chain_id": 8453,
+      "rpc_url": "https://mainnet.base.org",
+      "explorer": "https://basescan.org",
+      "native_token": "ETH",
+      "supported_tokens": ["USDC", "EURC"]
+    }
+  ]
+}
+```
+
+## Batch Transfers
+
+Execute multiple transfers in one call:
+
+```bash cURL
+curl -X POST https://api.sardis.sh/api/v2/transactions/batch-transfer \
+  -H "Authorization: Bearer sk_live_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "wallet_id": "wallet_abc123",
+    "chain": "base",
+    "token": "USDC",
+    "transfers": [
+      {"destination": "0x111...", "amount": "10.00", "reference": "payment-1"},
+      {"destination": "0x222...", "amount": "20.00", "reference": "payment-2"}
+    ]
+  }'
+```
+
+### Response
+
+```json
+{
+  "batch_id": "batch_xyz789",
+  "wallet_id": "wallet_abc123",
+  "chain": "base",
+  "token": "USDC",
+  "total_transfers": 2,
+  "successful": 2,
+  "failed": 0,
+  "results": [
+    {
+      "reference": "payment-1",
+      "destination": "0x111...",
+      "amount": "10.00",
+      "tx_hash": "0xaaa...",
+      "status": "success"
+    }
+  ]
+}
+```

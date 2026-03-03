@@ -1,0 +1,357 @@
+---
+title: 'Rate Limits'
+description: 'Understand and manage API rate limits'
+---
+
+## Overview
+
+Sardis enforces rate limits to ensure fair usage and platform stability. Rate limits are applied per API key.
+
+## Rate Limit Tiers
+
+| Tier | Requests/Minute | Requests/Hour | Requests/Day |
+|------|----------------|---------------|-------------|
+| **Free** | 60 | 1,000 | 10,000 |
+| **Starter** | 300 | 10,000 | 100,000 |
+| **Pro** | 1,000 | 50,000 | 500,000 |
+| **Enterprise** | Custom | Custom | Custom |
+
+<Info>
+Contact sales@sardis.sh for Enterprise rate limits.
+</Info>
+
+## Rate Limit Headers
+
+Every API response includes rate limit information:
+
+```bash
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 45
+X-RateLimit-Reset: 1709467200
+```
+
+### Header Descriptions
+
+| Header | Description |
+|--------|-------------|
+| `X-RateLimit-Limit` | Maximum requests allowed in the current window |
+| `X-RateLimit-Remaining` | Requests remaining in the current window |
+| `X-RateLimit-Reset` | Unix timestamp when the rate limit resets |
+
+## Rate Limit Response
+
+When you exceed the rate limit, you'll receive a `429 Too Many Requests` response:
+
+```json
+{
+  "error": {
+    "code": "rate_limit_exceeded",
+    "message": "Rate limit exceeded",
+    "details": {
+      "limit": 60,
+      "window": "1 minute",
+      "retry_after": 45
+    }
+  }
+}
+```
+
+**Response Headers:**
+```
+HTTP/1.1 429 Too Many Requests
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1709467200
+Retry-After: 45
+```
+
+## Rate Limit Windows
+
+Rate limits are enforced across multiple time windows:
+
+- **Per-second:** Burst protection (10 requests/second)
+- **Per-minute:** Primary rate limit (varies by tier)
+- **Per-hour:** Secondary limit for sustained usage
+- **Per-day:** Daily cap for total requests
+
+## Endpoint-Specific Limits
+
+Some endpoints have stricter rate limits:
+
+### Payment Operations
+
+```
+POST /wallets/{wallet_id}/transfer
+```
+- **Rate Limit:** 10 requests/minute per wallet
+- **Reason:** Prevent abuse and ensure payment safety
+
+### Webhook Management
+
+```
+POST /webhooks
+DELETE /webhooks/{webhook_id}
+```
+- **Rate Limit:** 5 requests/minute
+- **Reason:** Prevent webhook flooding
+
+### API Key Operations
+
+```
+POST /api-keys
+DELETE /api-keys/{key_id}
+```
+- **Rate Limit:** 3 requests/minute
+- **Reason:** Security-sensitive operations
+
+## Handling Rate Limits
+
+### Check Headers Before Calling
+
+```python
+import time
+from sardis_sdk import SardisClient
+
+client = SardisClient(api_key="sk_live_your_api_key")
+
+def check_rate_limit(response):
+    remaining = int(response.headers.get('X-RateLimit-Remaining', 0))
+    reset = int(response.headers.get('X-RateLimit-Reset', 0))
+    
+    if remaining < 5:  # Buffer of 5 requests
+        wait_time = reset - int(time.time())
+        if wait_time > 0:
+            print(f"Rate limit low, waiting {wait_time}s")
+            time.sleep(wait_time)
+```
+
+### Exponential Backoff
+
+```python
+import time
+from sardis_sdk.exceptions import RateLimitError
+
+def make_request_with_backoff(func, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            return func()
+        except RateLimitError as e:
+            if attempt == max_retries - 1:
+                raise
+            
+            wait_time = min(60, (2 ** attempt) + e.retry_after)
+            print(f"Rate limited, waiting {wait_time}s")
+            time.sleep(wait_time)
+```
+
+### Batch Operations
+
+Use batch endpoints when available:
+
+```python
+# ❌ Bad: Makes 100 individual requests
+for recipient in recipients:
+    client.wallets.transfer(
+        wallet_id=wallet_id,
+        destination=recipient,
+        amount="10.00"
+    )
+
+# ✅ Good: Makes 1 batch request
+client.wallets.batch_transfer(
+    wallet_id=wallet_id,
+    transfers=[
+        {"destination": r, "amount": "10.00"}
+        for r in recipients
+    ]
+)
+```
+
+### Request Queuing
+
+Implement a queue to manage request rate:
+
+```python
+import asyncio
+from asyncio import Queue
+
+class RateLimitedClient:
+    def __init__(self, client, requests_per_second=10):
+        self.client = client
+        self.delay = 1.0 / requests_per_second
+        self.queue = Queue()
+        
+    async def enqueue(self, func, *args, **kwargs):
+        future = asyncio.Future()
+        await self.queue.put((func, args, kwargs, future))
+        return await future
+    
+    async def process_queue(self):
+        while True:
+            func, args, kwargs, future = await self.queue.get()
+            try:
+                result = await func(*args, **kwargs)
+                future.set_result(result)
+            except Exception as e:
+                future.set_exception(e)
+            await asyncio.sleep(self.delay)
+```
+
+## Monitoring Rate Limit Usage
+
+### Check Current Usage
+
+```bash
+curl https://api.sardis.sh/api/v2/rate-limits \
+  -H "Authorization: Bearer sk_live_your_api_key"
+```
+
+Response:
+```json
+{
+  "tier": "pro",
+  "limits": {
+    "per_minute": 1000,
+    "per_hour": 50000,
+    "per_day": 500000
+  },
+  "current_usage": {
+    "minute": {
+      "requests": 45,
+      "remaining": 955,
+      "resets_at": "2025-03-03T10:01:00Z"
+    },
+    "hour": {
+      "requests": 2340,
+      "remaining": 47660,
+      "resets_at": "2025-03-03T11:00:00Z"
+    },
+    "day": {
+      "requests": 12500,
+      "remaining": 487500,
+      "resets_at": "2025-03-04T00:00:00Z"
+    }
+  }
+}
+```
+
+### Dashboard Monitoring
+
+View real-time rate limit usage in the [Dashboard](https://app.sardis.sh/settings/api-usage):
+
+- Current usage by endpoint
+- Historical usage graphs
+- Rate limit violations
+- Recommendations for optimization
+
+## Rate Limit Best Practices
+
+### 1. Cache Responses
+
+Cache frequently accessed data:
+
+```python
+from functools import lru_cache
+import time
+
+@lru_cache(maxsize=100)
+def get_agent_cached(agent_id, cache_time):
+    # cache_time changes every 60 seconds
+    return client.agents.get(agent_id)
+
+# Use it
+agent = get_agent_cached("agent_123", int(time.time() / 60))
+```
+
+### 2. Use Webhooks
+
+Instead of polling for updates, use webhooks:
+
+```python
+# ❌ Bad: Polling every second
+while True:
+    tx = client.transactions.get(tx_id)
+    if tx.status == "completed":
+        break
+    time.sleep(1)
+
+# ✅ Good: Use webhooks
+client.webhooks.create(
+    url="https://your-app.com/webhooks",
+    events=["transaction.completed"]
+)
+```
+
+### 3. Parallel Requests
+
+Use parallel requests within rate limits:
+
+```python
+import asyncio
+from sardis_sdk import AsyncSardisClient
+
+async def get_multiple_agents(agent_ids):
+    client = AsyncSardisClient(api_key="sk_live_your_api_key")
+    tasks = [client.agents.get(aid) for aid in agent_ids]
+    return await asyncio.gather(*tasks)
+
+# Get 10 agents in parallel
+agents = asyncio.run(get_multiple_agents(agent_ids))
+```
+
+### 4. Request Only What You Need
+
+Use field filtering and pagination:
+
+```bash
+# Only fetch required fields
+GET /api/v2/agents?fields=agent_id,name&limit=10
+```
+
+## Increasing Rate Limits
+
+To increase your rate limits:
+
+1. **Upgrade your plan** in the [Dashboard](https://app.sardis.sh/billing)
+2. **Contact sales** for Enterprise limits: sales@sardis.sh
+3. **Optimize usage** following best practices above
+
+## Rate Limit Errors in SDKs
+
+### Python SDK
+
+```python
+from sardis_sdk import SardisClient
+from sardis_sdk.exceptions import RateLimitError
+
+client = SardisClient(api_key="sk_live_your_api_key")
+
+try:
+    agent = client.agents.create(name="new-agent")
+except RateLimitError as e:
+    print(f"Rate limited. Retry after {e.retry_after} seconds")
+    print(f"Current limit: {e.rate_limit}")
+    print(f"Reset at: {e.reset_at}")
+```
+
+### TypeScript SDK
+
+```typescript
+import { SardisClient, RateLimitError } from '@sardis/sdk';
+
+const client = new SardisClient({ apiKey: 'sk_live_your_api_key' });
+
+try {
+  const agent = await client.agents.create({ name: 'new-agent' });
+} catch (error) {
+  if (error instanceof RateLimitError) {
+    console.log(`Rate limited. Retry after ${error.retryAfter} seconds`);
+    console.log(`Current limit: ${error.rateLimit}`);
+    console.log(`Reset at: ${error.resetAt}`);
+  }
+}
+```
+
+## Questions?
+
+Contact support@sardis.sh if you need help optimizing your API usage or require higher rate limits.

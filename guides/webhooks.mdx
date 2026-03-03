@@ -1,0 +1,656 @@
+---
+title: Webhooks
+description: Receive real-time notifications for payment and compliance events
+---
+
+Webhooks allow your application to receive real-time notifications when events happen in Sardis. This is essential for monitoring agent activity, tracking payments, and responding to compliance events.
+
+## How Webhooks Work
+
+1. **Subscribe**: Register a webhook URL with Sardis
+2. **Event occurs**: Agent makes payment, KYC completes, policy violation, etc.
+3. **Sardis sends HTTP POST**: JSON payload sent to your endpoint
+4. **Your app processes**: Handle the event in your application
+5. **Return 200 OK**: Confirm receipt
+
+## Creating a Webhook
+
+<Steps>
+  <Step title="Create Webhook Endpoint">
+    Set up an HTTPS endpoint to receive webhooks:
+    
+    ```python
+    from flask import Flask, request
+    import hmac
+    import hashlib
+    
+    app = Flask(__name__)
+    
+    @app.route("/webhooks/sardis", methods=["POST"])
+    def handle_webhook():
+        # Verify signature (see below)
+        signature = request.headers.get("X-Sardis-Signature")
+        if not verify_signature(request.data, signature):
+            return {"error": "Invalid signature"}, 401
+        
+        # Parse event
+        event = request.json
+        event_type = event["type"]
+        event_data = event["data"]
+        
+        # Handle event
+        if event_type == "payment.completed":
+            handle_payment_completed(event_data)
+        elif event_type == "policy.violation":
+            handle_policy_violation(event_data)
+        
+        # Return 200 OK
+        return {"status": "ok"}
+    
+    if __name__ == "__main__":
+        app.run(port=8080)
+    ```
+  </Step>
+
+  <Step title="Register Webhook with Sardis">
+    ```python
+    from sardis import SardisClient
+    
+    client = SardisClient(api_key="sk_...")
+    
+    webhook = client.webhooks.create(
+        url="https://yourapp.com/webhooks/sardis",
+        events=[
+            "payment.completed",
+            "payment.failed",
+            "policy.violation",
+            "wallet.created",
+            "kyc.inquiry.approved",
+        ]
+    )
+    
+    print(f"Webhook ID: {webhook.subscription_id}")
+    print(f"Secret: {webhook.secret}")  # Save this!
+    ```
+    
+    <Warning>
+      Save the webhook secret! You'll need it to verify signatures. It's only shown once.
+    </Warning>
+  </Step>
+
+  <Step title="Test Your Webhook">
+    ```python
+    # Send test event
+    client.webhooks.send_test(
+        subscription_id=webhook.subscription_id,
+        event_type="payment.completed"
+    )
+    
+    print("Test event sent - check your endpoint logs")
+    ```
+  </Step>
+</Steps>
+
+## Signature Verification
+
+Verify that webhooks are from Sardis:
+
+```python
+import hmac
+import hashlib
+
+def verify_signature(payload: bytes, signature: str, secret: str) -> bool:
+    """
+    Verify webhook signature.
+    
+    Args:
+        payload: Raw request body (bytes)
+        signature: X-Sardis-Signature header value
+        secret: Your webhook secret
+    
+    Returns:
+        True if signature is valid
+    """
+    # Compute expected signature
+    expected = hmac.new(
+        secret.encode('utf-8'),
+        payload,
+        hashlib.sha256
+    ).hexdigest()
+    
+    # Compare (constant-time comparison)
+    return hmac.compare_digest(expected, signature)
+
+# Usage
+@app.route("/webhooks/sardis", methods=["POST"])
+def handle_webhook():
+    signature = request.headers.get("X-Sardis-Signature")
+    secret = os.environ["SARDIS_WEBHOOK_SECRET"]
+    
+    if not verify_signature(request.data, signature, secret):
+        return {"error": "Invalid signature"}, 401
+    
+    # Process webhook...
+    return {"status": "ok"}
+```
+
+<Note>
+  Always verify signatures in production to prevent spoofed webhooks.
+</Note>
+
+## Available Events
+
+### Payment Events
+
+| Event | When It Fires |
+|-------|---------------|
+| `payment.created` | Payment initiated |
+| `payment.pending` | Payment submitted to blockchain |
+| `payment.completed` | Payment confirmed on-chain |
+| `payment.failed` | Payment execution failed |
+
+```python
+@app.route("/webhooks/sardis", methods=["POST"])
+def handle_webhook():
+    event = request.json
+    
+    if event["type"] == "payment.completed":
+        tx_id = event["data"]["tx_id"]
+        amount = event["data"]["amount"]
+        token = event["data"]["token"]
+        from_wallet = event["data"]["from_wallet"]
+        to_address = event["data"]["to_address"]
+        tx_hash = event["data"]["tx_hash"]
+        
+        print(f"Payment completed: {amount} {token}")
+        print(f"TX Hash: {tx_hash}")
+        
+        # Update your database
+        db.transactions.update(
+            {"tx_id": tx_id},
+            {"status": "completed", "tx_hash": tx_hash}
+        )
+    
+    return {"status": "ok"}
+```
+
+### Policy Events
+
+| Event | When It Fires |
+|-------|---------------|
+| `policy.check_passed` | Payment passed policy checks |
+| `policy.violation` | Payment blocked by policy |
+| `policy.threshold_warning` | Approaching spending limit |
+| `policy.updated` | Policy modified |
+
+```python
+if event["type"] == "policy.violation":
+    agent_id = event["data"]["agent_id"]
+    amount = event["data"]["amount"]
+    reason = event["data"]["reason"]
+    checks_failed = event["data"]["checks_failed"]
+    
+    # Alert team
+    send_slack_alert(
+        channel="#agent-monitoring",
+        message=f"Policy violation by {agent_id}:\n"
+                f"Attempted: ${amount}\n"
+                f"Reason: {reason}\n"
+                f"Checks failed: {', '.join(checks_failed)}"
+    )
+```
+
+### Wallet Events
+
+| Event | When It Fires |
+|-------|---------------|
+| `wallet.created` | New wallet created |
+| `wallet.funded` | Wallet received funds |
+| `wallet.frozen` | Wallet frozen |
+| `wallet.unfrozen` | Wallet unfrozen |
+| `wallet.balance_low` | Balance below threshold |
+
+```python
+if event["type"] == "wallet.balance_low":
+    wallet_id = event["data"]["wallet_id"]
+    balance = event["data"]["balance"]
+    threshold = event["data"]["threshold"]
+    
+    # Auto-refund wallet
+    client.funding.create_transfer(
+        from_wallet="treasury_wallet",
+        to_wallet=wallet_id,
+        amount=1000,
+        token="USDC"
+    )
+    
+    print(f"Auto-funded {wallet_id}: ${balance} -> $1000")
+```
+
+### Card Events
+
+| Event | When It Fires |
+|-------|---------------|
+| `card.created` | Virtual card issued |
+| `card.transaction.approved` | Card transaction approved |
+| `card.transaction.declined` | Card transaction declined |
+| `card.frozen` | Card frozen |
+| `card.cancelled` | Card cancelled |
+
+```python
+if event["type"] == "card.transaction.approved":
+    card_id = event["data"]["card_id"]
+    amount = event["data"]["amount"]
+    merchant = event["data"]["merchant_descriptor"]
+    mcc = event["data"]["merchant_category_code"]
+    
+    # Log transaction
+    db.card_transactions.insert({
+        "card_id": card_id,
+        "amount": amount,
+        "merchant": merchant,
+        "mcc": mcc,
+        "timestamp": event["timestamp"]
+    })
+```
+
+### Compliance Events
+
+| Event | When It Fires |
+|-------|---------------|
+| `kyc.inquiry.created` | KYC verification started |
+| `kyc.inquiry.completed` | User completed KYC flow |
+| `kyc.inquiry.approved` | KYC approved |
+| `kyc.inquiry.declined` | KYC declined |
+| `kyc.inquiry.expired` | KYC verification expired |
+| `sanctions.match` | Address matched sanctions list |
+| `risk.high` | High-risk activity detected |
+
+```python
+if event["type"] == "kyc.inquiry.approved":
+    reference_id = event["data"]["reference_id"]  # Your agent_id
+    inquiry_id = event["data"]["inquiry_id"]
+    
+    # Enable wallet for agent
+    client.wallets.enable(agent_id=reference_id)
+    
+    # Send welcome email
+    send_email(
+        to=event["data"]["email"],
+        subject="Your wallet is ready!",
+        body="Your identity has been verified. You can now make payments."
+    )
+
+elif event["type"] == "sanctions.match":
+    address = event["data"]["address"]
+    lists = event["data"]["lists_matched"]
+    risk_level = event["data"]["risk_level"]
+    
+    # Block address immediately
+    client.wallets.freeze_by_address(address=address)
+    
+    # Alert compliance team
+    send_urgent_alert(
+        to="compliance@yourcompany.com",
+        subject="URGENT: Sanctions match detected",
+        body=f"Address {address} matched: {lists}\nRisk: {risk_level}"
+    )
+```
+
+### Approval Events
+
+| Event | When It Fires |
+|-------|---------------|
+| `approval.requested` | Payment requires human approval |
+| `approval.approved` | Approval granted |
+| `approval.rejected` | Approval denied |
+| `approval.expired` | Approval request expired |
+
+```python
+if event["type"] == "approval.requested":
+    approval_id = event["data"]["approval_id"]
+    agent_id = event["data"]["agent_id"]
+    amount = event["data"]["amount"]
+    destination = event["data"]["destination"]
+    reason = event["data"]["reason"]
+    
+    # Send Slack notification with approve/reject buttons
+    send_slack_message(
+        channel="#agent-approvals",
+        text=f"Approval needed for {agent_id}\n"
+             f"Amount: ${amount}\n"
+             f"To: {destination}\n"
+             f"Reason: {reason}",
+        actions=[
+            {"text": "Approve", "url": f"/approve/{approval_id}"},
+            {"text": "Reject", "url": f"/reject/{approval_id}"},
+        ]
+    )
+```
+
+## Event Handling Patterns
+
+### Idempotency
+
+Handle duplicate webhook deliveries:
+
+```python
+from redis import Redis
+
+redis = Redis()
+
+@app.route("/webhooks/sardis", methods=["POST"])
+def handle_webhook():
+    event = request.json
+    event_id = event["id"]
+    
+    # Check if already processed
+    if redis.exists(f"webhook:{event_id}"):
+        print(f"Duplicate webhook {event_id} - ignoring")
+        return {"status": "ok"}  # Still return 200
+    
+    # Mark as processing
+    redis.setex(f"webhook:{event_id}", 86400, "1")  # 24 hours
+    
+    # Process event
+    process_event(event)
+    
+    return {"status": "ok"}
+```
+
+### Async Processing
+
+Process webhooks asynchronously:
+
+```python
+from celery import Celery
+
+app = Flask(__name__)
+celery = Celery(app.name)
+
+@celery.task
+def process_webhook_async(event):
+    """Process webhook in background."""
+    event_type = event["type"]
+    
+    if event_type == "payment.completed":
+        # Long-running processing
+        update_analytics(event["data"])
+        send_notifications(event["data"])
+        update_reports(event["data"])
+
+@app.route("/webhooks/sardis", methods=["POST"])
+def handle_webhook():
+    # Verify signature
+    if not verify_signature(request.data, request.headers.get("X-Sardis-Signature")):
+        return {"error": "Invalid signature"}, 401
+    
+    # Queue for async processing
+    process_webhook_async.delay(request.json)
+    
+    # Return immediately
+    return {"status": "ok"}
+```
+
+### Error Handling
+
+Handle errors gracefully:
+
+```python
+@app.route("/webhooks/sardis", methods=["POST"])
+def handle_webhook():
+    try:
+        event = request.json
+        
+        # Process event
+        process_event(event)
+        
+        return {"status": "ok"}
+        
+    except Exception as e:
+        # Log error
+        logger.error(f"Webhook processing failed: {e}", exc_info=True)
+        
+        # Save to dead letter queue for retry
+        save_to_dlq(request.json)
+        
+        # Return 200 to avoid retries (we'll retry from DLQ)
+        return {"status": "error", "message": str(e)}
+```
+
+## Webhook Management
+
+### List Webhooks
+
+```python
+webhooks = client.webhooks.list()
+
+for webhook in webhooks:
+    print(f"ID: {webhook.subscription_id}")
+    print(f"URL: {webhook.url}")
+    print(f"Events: {webhook.events}")
+    print(f"Active: {webhook.is_active}")
+    print(f"Created: {webhook.created_at}")
+```
+
+### Update Webhook
+
+```python
+# Update events
+client.webhooks.update(
+    subscription_id=webhook.subscription_id,
+    events=[
+        "payment.completed",
+        "payment.failed",
+        "policy.violation",
+    ]
+)
+
+# Disable webhook
+client.webhooks.update(
+    subscription_id=webhook.subscription_id,
+    is_active=False
+)
+```
+
+### Delete Webhook
+
+```python
+client.webhooks.delete(subscription_id=webhook.subscription_id)
+print("Webhook deleted")
+```
+
+## Webhook Delivery
+
+### Retry Policy
+
+Sardis automatically retries failed webhooks:
+
+- **Retry on**: 5xx errors, timeouts, network errors
+- **Retry schedule**: Exponential backoff
+  - 1st retry: 1 minute
+  - 2nd retry: 5 minutes
+  - 3rd retry: 15 minutes
+  - 4th retry: 1 hour
+  - 5th retry: 6 hours
+- **Max retries**: 5 attempts
+- **Timeout**: 30 seconds per attempt
+
+### Delivery Logs
+
+```python
+# Get webhook delivery logs
+logs = client.webhooks.get_logs(
+    subscription_id=webhook.subscription_id,
+    start_date="2026-03-01",
+    limit=100
+)
+
+for log in logs:
+    print(f"{log.timestamp}: {log.event_type}")
+    print(f"  Status: {log.status_code}")
+    print(f"  Response time: {log.response_time_ms}ms")
+    
+    if log.failed:
+        print(f"  Error: {log.error_message}")
+        print(f"  Retry count: {log.retry_count}")
+```
+
+## Testing Webhooks
+
+Test webhooks locally with ngrok:
+
+```bash
+# Start your local server
+python app.py
+
+# In another terminal, start ngrok
+ngrok http 8080
+
+# Use the ngrok URL for webhooks
+# https://abc123.ngrok.io/webhooks/sardis
+```
+
+Then register the ngrok URL:
+
+```python
+webhook = client.webhooks.create(
+    url="https://abc123.ngrok.io/webhooks/sardis",
+    events=["payment.completed"]
+)
+
+# Send test event
+client.webhooks.send_test(
+    subscription_id=webhook.subscription_id,
+    event_type="payment.completed"
+)
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Webhooks not being received">
+    Check:
+    
+    1. **Endpoint is accessible**: Test with curl
+       ```bash
+       curl -X POST https://yourapp.com/webhooks/sardis \
+         -H "Content-Type: application/json" \
+         -d '{"test": "data"}'
+       ```
+    
+    2. **Firewall rules**: Ensure Sardis IPs are allowed
+       ```python
+       # Get Sardis webhook IPs
+       ips = client.webhooks.get_source_ips()
+       print(f"Allow these IPs: {ips}")
+       ```
+    
+    3. **HTTPS required**: Webhooks only sent to HTTPS endpoints (except localhost)
+    
+    4. **Check logs**:
+       ```python
+       logs = client.webhooks.get_logs(subscription_id=webhook.subscription_id)
+       for log in logs:
+           if log.failed:
+               print(f"Failed: {log.error_message}")
+       ```
+  </Accordion>
+
+  <Accordion title="Signature verification failing">
+    Common issues:
+    
+    1. **Using wrong secret**: Make sure you're using the webhook's secret
+    2. **Signature encoding**: Use raw request body (bytes), not parsed JSON
+    3. **Secret rotation**: If you rotated the secret, update your code
+    
+    Debug:
+    
+    ```python
+    @app.route("/webhooks/sardis", methods=["POST"])
+    def handle_webhook():
+        # Log for debugging
+        print(f"Signature: {request.headers.get('X-Sardis-Signature')}")
+        print(f"Body: {request.data}")
+        
+        # Verify
+        if not verify_signature(request.data, request.headers.get("X-Sardis-Signature")):
+            return {"error": "Invalid signature"}, 401
+        
+        return {"status": "ok"}
+    ```
+  </Accordion>
+
+  <Accordion title="Duplicate webhooks received">
+    This is normal. Networks can cause duplicate deliveries. Always implement idempotency:
+    
+    ```python
+    @app.route("/webhooks/sardis", methods=["POST"])
+    def handle_webhook():
+        event = request.json
+        event_id = event["id"]
+        
+        # Check if already processed
+        if db.webhook_events.find_one({"event_id": event_id}):
+            return {"status": "ok"}  # Already processed
+        
+        # Process and save
+        process_event(event)
+        db.webhook_events.insert_one({"event_id": event_id, "processed_at": datetime.utcnow()})
+        
+        return {"status": "ok"}
+    ```
+  </Accordion>
+
+  <Accordion title="How long do webhooks wait for a response?">
+    Sardis webhooks timeout after 30 seconds. Your endpoint should:
+    
+    1. **Return quickly**: Less than 1 second ideal
+    2. **Process async**: Queue heavy work for later
+    3. **Return 200**: Even if async processing
+    
+    Good pattern:
+    
+    ```python
+    @app.route("/webhooks/sardis", methods=["POST"])
+    def handle_webhook():
+        # Quick validation
+        if not verify_signature(...):
+            return {"error": "Invalid"}, 401
+        
+        # Queue for processing
+        redis.lpush("webhook_queue", request.data)
+        
+        # Return immediately
+        return {"status": "ok"}
+    ```
+    
+    Bad pattern:
+    
+    ```python
+    def handle_webhook():
+        # This takes too long!
+        process_analytics(event)  # 10 seconds
+        send_emails(event)  # 5 seconds
+        update_reports(event)  # 8 seconds
+        return {"status": "ok"}  # Timeout!
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Event Reference" icon="webhook" href="/api-reference/webhooks">
+    Full list of webhook events
+  </Card>
+  <Card title="Testing" icon="flask" href="/guides/testing">
+    Test webhooks in sandbox
+  </Card>
+  <Card title="Compliance & KYC" icon="shield-check" href="/guides/compliance-kyc">
+    Compliance event webhooks
+  </Card>
+  <Card title="Making Payments" icon="credit-card" href="/guides/making-payments">
+    Payment event webhooks
+  </Card>
+</CardGroup>

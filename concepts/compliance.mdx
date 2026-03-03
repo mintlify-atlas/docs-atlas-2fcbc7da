@@ -1,0 +1,490 @@
+---
+title: 'Compliance'
+description: 'KYC/AML, sanctions screening, and Know Your Agent verification'
+icon: 'building-shield'
+---
+
+## Overview
+
+Sardis enforces **multi-layered compliance** to ensure all payments meet regulatory requirements:
+
+1. **KYC (Know Your Customer)** via Persona
+2. **AML (Anti-Money Laundering)** risk scoring
+3. **Sanctions Screening** via Elliptic
+4. **KYA (Know Your Agent)** trust verification
+
+<Warning>
+  Compliance checks run in **Phase 2** of the payment pipeline, after policy validation but before blockchain execution. Any compliance failure denies the payment immediately.
+</Warning>
+
+## KYC (Know Your Customer)
+
+Sardis uses **Persona** for KYC verification of agent owners:
+
+### KYC Levels
+
+| Level | Requirements | Use Case |
+|-------|--------------|----------|
+| **None** | No verification | Testing only |
+| **Email** | Email verification | Low-value agents |
+| **Identity** | Government ID + selfie | Standard agents |
+| **Enhanced** | ID + proof of address + source of funds | High-value agents |
+
+### KYC Flow
+
+```python
+from sardis_compliance.kyc import KYCService, PersonaProvider
+
+kyc = KYCService(provider=PersonaProvider(
+    api_key=os.getenv("PERSONA_API_KEY"),
+    environment="sandbox"
+))
+
+# Create inquiry for user
+inquiry = await kyc.create_inquiry(
+    user_id="user_abc123",
+    inquiry_template_id="itmpl_...",  # Persona template
+    redirect_url="https://app.example.com/onboarding"
+)
+
+print(f"KYC URL: {inquiry.url}")
+
+# Check status
+status = await kyc.check_status(inquiry_id=inquiry.inquiry_id)
+
+if status.verified:
+    print(f"✅ KYC verified: {status.name}")
+    print(f"   Country: {status.country}")
+    print(f"   Risk Level: {status.risk_level}")
+else:
+    print(f"❌ KYC failed: {status.reason}")
+```
+
+<Info>
+  Persona provides real-time identity verification with liveness detection, document validation, and fraud prevention.
+</Info>
+
+## AML (Anti-Money Laundering)
+
+Sardis performs AML risk scoring on every transaction:
+
+### Risk Factors
+
+- **Transaction velocity:** Rapid-fire payments flagged
+- **Amount patterns:** Structuring detection (e.g., many $9,999 payments)
+- **Counterparty risk:** Payments to high-risk jurisdictions
+- **Behavioral anomalies:** Unusual spending patterns
+
+### Risk Scoring
+
+```python
+from sardis_compliance.risk_scoring import RiskScorer
+
+scorer = RiskScorer()
+
+# Calculate risk score
+risk = await scorer.score_transaction(
+    agent_id="agent_123",
+    destination="merchant.com",
+    amount=Decimal("500.00"),
+    transaction_history=tx_history
+)
+
+print(f"Risk Score: {risk.score}")
+print(f"Risk Level: {risk.level}")  # LOW | MEDIUM | HIGH | CRITICAL
+
+if risk.level == "CRITICAL":
+    print(f"Flags: {risk.flags}")
+    # Block transaction and file SAR
+    await compliance.file_sar(risk)
+```
+
+### Risk Levels
+
+| Score | Level | Action |
+|-------|-------|--------|
+| 0.0–0.3 | LOW | Auto-approve |
+| 0.3–0.6 | MEDIUM | Manual review queue |
+| 0.6–0.8 | HIGH | Enhanced due diligence |
+| 0.8–1.0 | CRITICAL | Block + file SAR |
+
+## Sanctions Screening
+
+Sardis uses **Elliptic** to screen addresses against global sanctions lists:
+
+### Screened Lists
+
+- **OFAC** (US Treasury)
+- **EU Sanctions**
+- **UN Sanctions**
+- **UK HMT Sanctions**
+- **FATF High-Risk Jurisdictions**
+
+### Screening Flow
+
+```python
+from sardis_compliance.sanctions import SanctionsService, EllipticProvider
+
+sanctions = SanctionsService(provider=EllipticProvider(
+    api_key=os.getenv("ELLIPTIC_API_KEY")
+))
+
+# Screen destination address
+check = await sanctions.screen_address(
+    address="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+    chain="ethereum"
+)
+
+if check.is_sanctioned:
+    print(f"❌ Address sanctioned")
+    print(f"   Lists: {check.sanction_lists}")
+    print(f"   Reason: {check.reason}")
+    # Block payment
+    raise ComplianceViolationError("Sanctioned address")
+else:
+    print(f"✅ Address clear")
+    print(f"   Risk Score: {check.risk_score}")
+```
+
+<Warning>
+  Payments to sanctioned addresses are **automatically blocked** and reported to compliance officers. Never override sanctions checks.
+</Warning>
+
+## KYA (Know Your Agent)
+
+KYA extends KYC/KYB concepts to AI agents, verifying:
+
+1. **Legal Anchor:** Who owns the agent (linked to KYC'd entity)
+2. **Agent Manifest:** What the agent is authorized to do
+3. **Trust Score:** How trustworthy the agent is based on behavior
+
+### KYA Levels
+
+| Level | Trust Level | Per-Tx | Daily | Requirements |
+|-------|-------------|--------|-------|-------------|
+| **NONE** | LOW | $50 | $100 | No verification |
+| **BASIC** | LOW | $50 | $100 | Email verification |
+| **VERIFIED** | MEDIUM | $500 | $1,000 | Owner KYC + org verification |
+| **ATTESTED** | HIGH | $5,000 | $10,000 | VC + code hash + optional TEE |
+
+<Info>
+  KYA levels automatically map to spending policy trust levels, adjusting limits without manual intervention.
+</Info>
+
+### KYA Registration
+
+```python
+from sardis_compliance.kya import KYAService, AgentManifest
+from decimal import Decimal
+
+kya = KYAService()
+
+# Create agent manifest
+manifest = AgentManifest(
+    agent_id="agent_abc123",
+    owner_id="org_xyz",  # Must have completed KYC
+    capabilities=["saas_subscription", "api_credits"],
+    max_budget_per_tx=Decimal("100.00"),
+    daily_budget=Decimal("500.00"),
+    allowed_domains=["openai.com", "anthropic.com", "aws.com"],
+    blocked_domains=["gambling.*", "adult.*"],
+    framework="langchain",
+    framework_version="0.1.0",
+    description="AI research assistant"
+)
+
+# Register agent
+result = await kya.register_agent(manifest)
+
+if result.success:
+    print(f"✅ KYA registered")
+    print(f"   Level: {result.kya_level}")
+    print(f"   Manifest Hash: {manifest.manifest_hash}")
+```
+
+### KYA Verification
+
+```python
+# Before payment, check KYA
+check = await kya.check_agent(
+    agent_id="agent_abc123",
+    amount=Decimal("50.00")
+)
+
+if not check.allowed:
+    print(f"❌ KYA denied: {check.reason}")
+    # Possible reasons:
+    # - "kya_level_insufficient"
+    # - "kya_attestation_revoked"
+    # - "kya_verification_expired"
+    raise KYAViolationError(check.reason)
+
+print(f"✅ KYA verified")
+print(f"   Level: {check.kya_level}")
+print(f"   Trust Score: {check.trust_score}")
+```
+
+## Trust Scoring
+
+Sardis calculates a unified trust score from multiple signals:
+
+### Trust Signals
+
+1. **KYA Level** (30% weight): Identity verification depth
+2. **Transaction History** (25% weight): Volume, success rate, consistency
+3. **Compliance Status** (20% weight): KYC, sanctions, violations
+4. **Reputation** (15% weight): Ratings from counterparties
+5. **Behavioral Consistency** (10% weight): Goal drift, anomalies
+
+### Trust Calculation
+
+```python
+from sardis_v2_core.kya_trust_scoring import TrustScorer, KYALevel
+
+scorer = TrustScorer()
+
+score = await scorer.calculate_trust(
+    agent_id="agent_123",
+    kya_level=KYALevel.VERIFIED,
+    transaction_history=tx_history,
+    compliance_record=compliance,
+    reputation_record=reputation,
+    behavioral_record=behavioral
+)
+
+print(f"Trust Score: {score.overall}")
+print(f"Trust Tier: {score.tier}")  # UNTRUSTED | LOW | MEDIUM | HIGH | SOVEREIGN
+print(f"Max Per-Tx: ${score.max_per_tx}")
+print(f"Max Per-Day: ${score.max_per_day}")
+
+# Breakdown by signal
+for signal in score.signals:
+    print(f"  {signal.name}: {signal.score:.2f} (weight: {signal.weight})")
+```
+
+### Trust Tiers
+
+| Score | Tier | Per-Tx | Daily |
+|-------|------|--------|-------|
+| 0.0–0.3 | UNTRUSTED | $10 | $25 |
+| 0.3–0.5 | LOW | $50 | $100 |
+| 0.5–0.7 | MEDIUM | $500 | $1,000 |
+| 0.7–0.9 | HIGH | $5,000 | $10,000 |
+| 0.9–1.0 | SOVEREIGN | $50,000 | $100,000 |
+
+## PEP Screening
+
+Screen for Politically Exposed Persons (PEPs):
+
+```python
+from sardis_compliance.pep import PEPService
+
+pep = PEPService()
+
+# Screen user
+check = await pep.check(
+    name="John Doe",
+    country="US",
+    date_of_birth="1990-01-01"
+)
+
+if check.is_pep:
+    print(f"⚠️ PEP detected")
+    print(f"   Role: {check.pep_role}")
+    print(f"   Country: {check.pep_country}")
+    # Require enhanced due diligence
+    await compliance.enhanced_due_diligence(check)
+else:
+    print(f"✅ Not a PEP")
+```
+
+## Adverse Media Screening
+
+Check for negative news coverage:
+
+```python
+from sardis_compliance.adverse_media import AdverseMediaService
+
+adverse_media = AdverseMediaService()
+
+# Screen entity
+check = await adverse_media.screen(
+    entity_name="Acme Corp",
+    entity_type="organization"
+)
+
+if check.has_adverse_media:
+    print(f"⚠️ Adverse media found")
+    for article in check.articles:
+        print(f"   - {article.title} ({article.source})")
+        print(f"     Risk: {article.risk_category}")
+    # Flag for manual review
+    await compliance.manual_review(check)
+```
+
+## Suspicious Activity Reports (SARs)
+
+File SARs for suspicious transactions:
+
+```python
+from sardis_compliance.sar import SARService
+
+sar_service = SARService()
+
+# File SAR
+sar = await sar_service.file_sar(
+    agent_id="agent_123",
+    transaction_id="tx_abc",
+    amount=Decimal("9999.00"),
+    reason="Structuring: Multiple payments just below $10k threshold",
+    risk_score=0.85,
+    supporting_evidence=[
+        "tx_abc: $9,999",
+        "tx_def: $9,998",
+        "tx_ghi: $9,997"
+    ]
+)
+
+print(f"SAR filed: {sar.sar_id}")
+print(f"Status: {sar.status}")  # PENDING | FILED | REVIEWED
+```
+
+## Travel Rule Compliance
+
+Comply with FATF Travel Rule for large transfers:
+
+```python
+from sardis_compliance.travel_rule import TravelRuleService
+
+travel_rule = TravelRuleService()
+
+# Check if travel rule applies
+if amount >= Decimal("1000.00"):
+    # Collect beneficiary information
+    beneficiary = await travel_rule.collect_beneficiary_info(
+        name="Jane Smith",
+        address="123 Main St, New York, NY",
+        account_number="0x..."
+    )
+    
+    # Send to counterparty VASP
+    await travel_rule.send_travel_rule_message(
+        beneficiary=beneficiary,
+        originator=originator,
+        amount=amount,
+        vasp_destination="vasp.example.com"
+    )
+```
+
+## Compliance Reports
+
+Generate compliance reports for regulators:
+
+```python
+from sardis_compliance.reports import ComplianceReportService
+from datetime import datetime, timedelta
+
+reports = ComplianceReportService()
+
+# Generate monthly compliance report
+report = await reports.generate_monthly_report(
+    month=datetime(2025, 3, 1),
+    include_sections=[
+        "transaction_summary",
+        "risk_alerts",
+        "sanctions_hits",
+        "sar_filings",
+        "kyc_verifications"
+    ]
+)
+
+# Export to PDF
+pdf = await reports.export_pdf(report)
+
+# Save to S3
+await s3.upload(pdf, bucket="compliance-reports")
+```
+
+## Code Examples
+
+### Example 1: Full Compliance Check
+
+```python compliance_check.py
+from sardis_compliance import ComplianceService
+from sardis_compliance.kyc import PersonaProvider
+from sardis_compliance.sanctions import EllipticProvider
+from decimal import Decimal
+
+# Initialize compliance service
+compliance = ComplianceService(
+    kyc_provider=PersonaProvider(api_key=os.getenv("PERSONA_API_KEY")),
+    sanctions_provider=EllipticProvider(api_key=os.getenv("ELLIPTIC_API_KEY"))
+)
+
+# Run full compliance check before payment
+check = await compliance.check_transaction(
+    agent_id="agent_123",
+    destination="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+    amount=Decimal("500.00"),
+    chain="ethereum"
+)
+
+if not check.approved:
+    print(f"❌ Compliance check failed: {check.reason}")
+    print(f"   Provider: {check.provider}")
+    print(f"   Risk Level: {check.risk_level}")
+    raise ComplianceViolationError(check.reason)
+
+print(f"✅ Compliance check passed")
+print(f"   KYC Status: {check.kyc_status}")
+print(f"   Sanctions Status: {check.sanctions_status}")
+print(f"   Risk Score: {check.risk_score}")
+```
+
+### Example 2: Enhanced Due Diligence
+
+```python edd.py
+from sardis_compliance import ComplianceService
+
+compliance = ComplianceService()
+
+# Trigger EDD for high-risk agent
+edd = await compliance.enhanced_due_diligence(
+    agent_id="agent_123",
+    reason="High transaction velocity",
+    required_documents=[
+        "source_of_funds",
+        "business_license",
+        "bank_statements"
+    ]
+)
+
+print(f"EDD initiated: {edd.edd_id}")
+print(f"Status: {edd.status}")  # PENDING | IN_PROGRESS | COMPLETE
+print(f"Required documents: {edd.required_documents}")
+
+# Check EDD status
+status = await compliance.check_edd_status(edd.edd_id)
+
+if status.complete:
+    print(f"✅ EDD complete: {status.conclusion}")
+else:
+    print(f"⏳ EDD in progress: {status.progress}%")
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Policies" icon="shield-check" href="/concepts/policies">
+    Configure spending rules and approval flows
+  </Card>
+  <Card title="Agents" icon="robot" href="/concepts/agents">
+    Create AI agents with KYA verification
+  </Card>
+  <Card title="Payments" icon="money-bill-transfer" href="/concepts/payments">
+    Understand the payment execution pipeline
+  </Card>
+  <Card title="Wallets" icon="wallet" href="/concepts/wallets">
+    Non-custodial MPC wallet architecture
+  </Card>
+</CardGroup>

@@ -1,0 +1,463 @@
+---
+title: Spending Policies
+description: Control agent spending with natural language policies
+---
+
+Spending policies are the core of Sardis's safety system. Every payment an AI agent makes must pass through a policy check before execution. Policies are written in natural language and automatically enforced.
+
+## Natural Language Policy Creation
+
+<Steps>
+  <Step title="Write Policy in Plain English">
+    Sardis uses NLP to parse spending rules written in natural language:
+    
+    ```python
+    from sardis import SardisClient
+    
+    client = SardisClient(api_key="sk_...")
+    
+    wallet = client.wallets.create(
+        name="research-agent",
+        chain="base",
+        policy="""
+        Max $50 per transaction.
+        Max $500 per day.
+        Only allow payments to openai.com, anthropic.com, and arxiv.org.
+        Block gambling and adult content merchants.
+        """
+    )
+    ```
+  </Step>
+
+  <Step title="Policy is Automatically Parsed">
+    The natural language parser converts your policy into enforcement rules:
+    
+    ```python
+    # Behind the scenes, this becomes:
+    # - per_transaction_limit: $50
+    # - daily_limit: $500  
+    # - merchant_allowlist: ["openai.com", "anthropic.com", "arxiv.org"]
+    # - blocked_mccs: [7995, 5967]  # Gambling, adult content
+    ```
+  </Step>
+
+  <Step title="Test Your Policy">
+    Validate the policy before deploying:
+    
+    ```python
+    # Test policy validation
+    result = client.policies.validate(
+        wallet_id=wallet.wallet_id,
+        amount=25.00,
+        merchant="openai.com",
+        token="USDC"
+    )
+    
+    print(f"Approved: {result.approved}")
+    print(f"Reason: {result.reason}")
+    ```
+  </Step>
+</Steps>
+
+## Policy Validation and Testing
+
+Before making real payments, test your policy:
+
+```python
+# Test a valid payment
+test_cases = [
+    {"amount": 25, "merchant": "openai.com", "expected": True},
+    {"amount": 100, "merchant": "openai.com", "expected": False},  # Exceeds per-tx limit
+    {"amount": 25, "merchant": "gambling.com", "expected": False},  # Blocked merchant
+]
+
+for test in test_cases:
+    result = client.policies.validate(
+        wallet_id=wallet.wallet_id,
+        amount=test["amount"],
+        merchant=test["merchant"],
+        token="USDC"
+    )
+    
+    assert result.approved == test["expected"], f"Policy test failed: {test}"
+    print(f"✓ Test passed: ${test['amount']} to {test['merchant']}")
+```
+
+### Dry Run Mode
+
+Test policies without creating wallets:
+
+```python
+from sardis_v2_core.nl_policy_parser import parse_natural_language_policy
+
+policy_text = "Max $100/tx, $1000/month, only allow AWS and OpenAI"
+policy = parse_natural_language_policy(policy_text)
+
+print(f"Per-tx limit: ${policy.per_transaction_limit}")
+print(f"Monthly limit: ${policy.monthly_limit}")
+print(f"Allowlist: {policy.merchant_allowlist}")
+```
+
+## Advanced Policy Rules
+
+### Merchant Allowlist
+
+Restrict spending to specific merchants:
+
+```python
+wallet = client.wallets.create(
+    name="api-agent",
+    chain="base",
+    policy="""
+    Max $200 per transaction.
+    Only allow payments to:
+    - openai.com
+    - anthropic.com
+    - aws.amazon.com
+    - stripe.com
+    """
+)
+```
+
+Any payment to a merchant not on the list will be rejected with:
+```
+PolicyViolation: Merchant 'unknown-site.com' not in allowlist
+```
+
+### Time Window Limits
+
+Set rolling time-based limits:
+
+```python
+wallet = client.wallets.create(
+    name="shopping-agent",
+    chain="base",
+    policy="""
+    Max $100 per transaction.
+    Max $500 per day.
+    Max $2,000 per week.
+    Max $8,000 per month.
+    """
+)
+```
+
+**How time windows work:**
+- **Daily**: Rolling 24-hour window from first spend
+- **Weekly**: Rolling 7-day window
+- **Monthly**: Rolling 30-day window
+
+Windows reset automatically when they expire.
+
+### MCC Blocking
+
+Block entire merchant categories using [Merchant Category Codes](https://en.wikipedia.org/wiki/Merchant_category_code):
+
+```python
+wallet = client.wallets.create(
+    name="safe-agent",
+    chain="base",
+    policy="""
+    Max $1000 per day.
+    Block gambling merchants.
+    Block adult content.
+    Block cryptocurrency purchases.
+    Block weapons and ammunition.
+    """
+)
+```
+
+**Common blocked categories:**
+
+| Category | MCC | Example |
+|----------|-----|--------|
+| Gambling | 7995 | Online casinos, betting |
+| Adult Content | 5967 | Adult websites |
+| Crypto | 6051 | Crypto exchanges |
+| Weapons | 5091 | Gun stores |
+| Tobacco | 5993 | Cigarettes, vaping |
+
+### Approval Thresholds
+
+Require human approval for large transactions:
+
+```python
+wallet = client.wallets.create(
+    name="procurement-agent",
+    chain="base",
+    policy="""
+    Max $100 per transaction without approval.
+    Max $5,000 per transaction with approval.
+    Max $20,000 per month.
+    """
+)
+
+# Payments over $100 will trigger approval flow
+result = wallet.pay(to="aws.amazon.com", amount=250, token="USDC")
+
+if result.status == "pending_approval":
+    print(f"Approval required: {result.approval_url}")
+    print(f"Approval ID: {result.approval_id}")
+    
+    # Approve via dashboard or API
+    client.approvals.approve(
+        approval_id=result.approval_id,
+        approver_id="user_123"
+    )
+```
+
+### Spending Scopes
+
+Limit spending to specific categories:
+
+```python
+wallet = client.wallets.create(
+    name="compute-agent",
+    chain="base",
+    policy="""
+    Max $1000 per day.
+    Only allow compute and data spending.
+    """
+)
+```
+
+**Available scopes:**
+- `all` - No restrictions (default)
+- `compute` - Cloud compute (AWS, GCP, Azure)
+- `data` - Data services (APIs, databases)
+- `services` - SaaS subscriptions
+- `retail` - E-commerce purchases
+- `digital` - Digital goods
+- `agent_to_agent` - Only agent-to-agent payments
+
+### Per-Merchant Limits
+
+Set different limits for different merchants:
+
+```python
+from sardis_v2_core.spending_policy import SpendingPolicy, MerchantRule
+from decimal import Decimal
+
+policy = SpendingPolicy(
+    per_transaction_limit=Decimal("500"),
+    total_limit=Decimal("10000"),
+    merchant_rules=[
+        MerchantRule(
+            merchant="openai.com",
+            rule_type="allow",
+            per_merchant_limit=Decimal("200")
+        ),
+        MerchantRule(
+            merchant="aws.amazon.com",
+            rule_type="allow",
+            per_merchant_limit=Decimal("1000")
+        ),
+    ]
+)
+
+wallet = client.wallets.create(
+    name="api-agent",
+    chain="base",
+    policy=policy  # Pass policy object directly
+)
+```
+
+## Policy Enforcement Flow
+
+Every payment goes through these checks (in order):
+
+```
+┌─────────────────────────────────────────┐
+│  1. Amount Validation                    │
+│     ✓ Amount > 0                         │
+│     ✓ Fee >= 0                           │
+├─────────────────────────────────────────┤
+│  2. Spending Scope Check                 │
+│     ✓ Category allowed?                  │
+├─────────────────────────────────────────┤
+│  3. MCC Check                            │
+│     ✓ Merchant category not blocked?     │
+├─────────────────────────────────────────┤
+│  4. Per-Transaction Limit                │
+│     ✓ Amount <= per_tx_limit?            │
+├─────────────────────────────────────────┤
+│  5. Total Spending Limit                 │
+│     ✓ Cumulative < total_limit?          │
+├─────────────────────────────────────────┤
+│  6. Time Window Limits                   │
+│     ✓ Daily/weekly/monthly OK?           │
+├─────────────────────────────────────────┤
+│  7. Balance Check                        │
+│     ✓ Wallet has enough funds?           │
+├─────────────────────────────────────────┤
+│  8. Merchant Rules                       │
+│     ✓ Allowlist/blocklist/caps           │
+├─────────────────────────────────────────┤
+│  9. Goal Drift Detection                 │
+│     ✓ Agent behavior as expected?        │
+├─────────────────────────────────────────┤
+│ 10. Approval Threshold                   │
+│     ✓ Needs human approval?              │
+└─────────────────────────────────────────┘
+```
+
+The **first failure** short-circuits with a denial reason.
+
+## Updating Policies
+
+Policies can be updated at any time:
+
+```python
+# Update an existing wallet's policy
+client.wallets.update_policy(
+    wallet_id=wallet.wallet_id,
+    policy="""
+    Max $200 per transaction.
+    Max $2000 per day.
+    Only allow openai.com, anthropic.com, aws.amazon.com.
+    """
+)
+
+# Or update with a policy object
+from sardis_v2_core.spending_policy import SpendingPolicy
+from decimal import Decimal
+
+new_policy = SpendingPolicy(
+    per_transaction_limit=Decimal("200"),
+    daily_limit=Decimal("2000"),
+    merchant_allowlist=["openai.com", "anthropic.com", "aws.amazon.com"]
+)
+
+client.wallets.update_policy(
+    wallet_id=wallet.wallet_id,
+    policy=new_policy
+)
+```
+
+<Warning>
+  Policy updates take effect immediately. Any pending transactions will be re-evaluated against the new policy.
+</Warning>
+
+## Policy Monitoring
+
+Track policy violations and spending patterns:
+
+```python
+# Get policy violations
+violations = client.policies.get_violations(
+    wallet_id=wallet.wallet_id,
+    start_date="2026-03-01",
+    end_date="2026-03-31"
+)
+
+for v in violations:
+    print(f"{v.timestamp}: {v.reason}")
+    print(f"  Attempted: ${v.amount} to {v.merchant}")
+
+# Get spending summary
+summary = client.wallets.get_spending_summary(wallet_id=wallet.wallet_id)
+print(f"Spent today: ${summary.spent_today}")
+print(f"Spent this week: ${summary.spent_week}")
+print(f"Remaining daily: ${summary.remaining_daily}")
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Policy validation fails unexpectedly">
+    Check that your policy text is clear and unambiguous. Common issues:
+    
+    - Using inconsistent currency symbols ($100 vs 100 USD)
+    - Ambiguous time periods ("weekly" vs "per week")
+    - Conflicting rules (allowlist and blocklist for same merchant)
+    
+    Use the validation endpoint to see parsed policy:
+    
+    ```python
+    parsed = client.policies.parse(
+        policy_text="Max $100/tx, $1000/day"
+    )
+    print(parsed.to_json())
+    ```
+  </Accordion>
+
+  <Accordion title="Legitimate payments being blocked">
+    Check the policy violation reason:
+    
+    ```python
+    result = wallet.pay(to="merchant.com", amount=50, token="USDC")
+    if not result.success:
+        print(f"Blocked: {result.policy_result.reason}")
+        print(f"Failed checks: {result.policy_result.checks_failed}")
+    ```
+    
+    Common causes:
+    - Merchant not in allowlist
+    - Daily/weekly limit reached
+    - Merchant MCC is blocked
+  </Accordion>
+
+  <Accordion title="How to handle policy violations in production">
+    Set up webhook alerts for violations:
+    
+    ```python
+    client.webhooks.create(
+        url="https://yourapp.com/webhooks/policy-violation",
+        events=["policy.violation", "policy.threshold_warning"]
+    )
+    ```
+    
+    Then in your webhook handler:
+    
+    ```python
+    @app.route("/webhooks/policy-violation", methods=["POST"])
+    def handle_violation():
+        event = request.json
+        if event["type"] == "policy.violation":
+            # Alert your team
+            send_slack_alert(
+                f"Policy violation: {event['data']['reason']}"
+            )
+        return {"status": "ok"}
+    ```
+  </Accordion>
+
+  <Accordion title="Can I disable policy enforcement temporarily?">
+    No. Policies are always enforced. This is a core security feature.
+    
+    If you need to make an exception, update the policy temporarily:
+    
+    ```python
+    # Temporarily increase limit
+    client.wallets.update_policy(
+        wallet_id=wallet.wallet_id,
+        policy="Max $10,000 per transaction"  # Higher limit
+    )
+    
+    # Make payment
+    result = wallet.pay(to="merchant.com", amount=5000, token="USDC")
+    
+    # Restore original policy
+    client.wallets.update_policy(
+        wallet_id=wallet.wallet_id,
+        policy=original_policy
+    )
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Making Payments" icon="credit-card" href="/guides/making-payments">
+    Execute payments with policy enforcement
+  </Card>
+  <Card title="Webhooks" icon="webhook" href="/guides/webhooks">
+    Get notified of policy violations
+  </Card>
+  <Card title="Compliance & KYC" icon="shield-check" href="/guides/compliance-kyc">
+    Add compliance checks to policies
+  </Card>
+  <Card title="Testing" icon="flask" href="/guides/testing">
+    Test policies in sandbox mode
+  </Card>
+</CardGroup>

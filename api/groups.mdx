@@ -1,0 +1,67 @@
+---
+title: 'Groups'
+description: 'Manage multi-agent groups with shared budgets'
+---
+
+## Overview
+
+Groups allow multiple agents to share a common budget and spending policy, ideal for team-based agent systems.
+
+## Create Group
+
+```bash cURL
+curl -X POST https://api.sardis.sh/api/v2/groups \
+  -H "Authorization: Bearer sk_live_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Marketing Team",
+    "budget": {
+      "per_transaction": "500.00",
+      "daily": "5000.00",
+      "monthly": "50000.00"
+    }
+  }'
+```
+
+```python Python
+group = client.groups.create(
+    name="Marketing Team",
+    budget={
+        "per_transaction": "500.00",
+        "daily": "5000.00",
+        "monthly": "50000.00"
+    }
+)
+```
+
+## Add Agent to Group
+
+```bash cURL
+curl -X POST https://api.sardis.sh/api/v2/groups/group_abc123/agents \
+  -H "Authorization: Bearer sk_live_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_id": "agent_xyz789"}'
+```
+
+## Get Group Spending
+
+```bash cURL
+curl https://api.sardis.sh/api/v2/groups/group_abc123/spending \
+  -H "Authorization: Bearer sk_live_your_api_key"
+```
+
+### Response
+
+```json
+{
+  "group_id": "group_abc123",
+  "name": "Marketing Team",
+  "budget": {
+    "per_transaction": "500.00",
+    "daily": "5000.00",
+    "monthly": "50000.00"
+  },
+  "agent_count": 3,
+  "agent_ids": ["agent_1", "agent_2", "agent_3"]
+}
+```

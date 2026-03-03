@@ -1,0 +1,551 @@
+---
+title: 'Google Gemini (ADK)'
+description: 'Build Gemini agents with Sardis using the Agent Development Kit'
+icon: 'google'
+---
+
+## Overview
+
+The **sardis-adk** package provides Google Agent Development Kit (ADK) integration for Sardis, enabling Gemini-powered agents to make policy-enforced payments autonomously.
+
+## When to Use Google Gemini
+
+- **Gemini Models**: Build with Gemini 2.0 Flash, Pro, or Ultra
+- **Google ADK**: Use Google's official agent framework
+- **Multimodal Agents**: Leverage Gemini's vision and audio capabilities
+- **Function Calling**: Native Gemini function calling with Sardis
+- **Google Cloud**: Deploy on Google Cloud Platform
+
+## Installation
+
+```bash
+pip install sardis-adk google-adk
+```
+
+<Tip>
+  Requires Python 3.10+ and `google-adk>=0.2.0`
+</Tip>
+
+## Quick Start
+
+<CodeGroup>
+
+```python Basic Usage
+import os
+from google.adk import Agent, Runner
+from google.adk.sessions import InMemorySessionService
+from sardis_adk import SardisToolkit
+
+# Create toolkit
+toolkit = SardisToolkit(
+    api_key=os.environ["SARDIS_API_KEY"],
+    wallet_id=os.environ["SARDIS_WALLET_ID"],
+)
+
+# Get ADK tools
+sardis_tools = toolkit.get_tools()
+
+# Create agent
+agent = Agent(
+    name="procurement-agent",
+    model="gemini-2.0-flash",
+    description="A procurement agent that purchases software and API credits.",
+    instruction=(
+        "You are a procurement agent with a Sardis wallet for making payments. "
+        "Before making any payment:\n"
+        "1. Check the wallet balance\n"
+        "2. Check the policy to verify the payment would be allowed\n"
+        "3. Execute the payment with a clear purpose\n"
+        "4. Report the result including transaction ID"
+    ),
+    tools=sardis_tools,
+)
+
+# Run agent
+async def main():
+    session_service = InMemorySessionService()
+    runner = Runner(
+        agent=agent,
+        app_name="sardis-demo",
+        session_service=session_service,
+    )
+    
+    session = await session_service.create_session(
+        app_name="sardis-demo",
+        user_id="demo-user",
+    )
+    
+    from google.genai import types
+    user_message = types.Content(
+        role="user",
+        parts=[types.Part(text="Pay $25 to Anthropic for API credits")],
+    )
+    
+    async for event in runner.run_async(
+        user_id="demo-user",
+        session_id=session.id,
+        new_message=user_message,
+    ):
+        if event.is_final_response():
+            for part in event.content.parts:
+                if part.text:
+                    print(f"Agent: {part.text}")
+
+import asyncio
+asyncio.run(main())
+```
+
+```python Full Example
+import os
+from google.adk import Agent, Runner
+from google.adk.sessions import InMemorySessionService
+from sardis_adk import SardisToolkit
+
+# Create toolkit with Sardis configuration
+toolkit = SardisToolkit(
+    api_key=os.environ.get("SARDIS_API_KEY", "sk_test_demo"),
+    wallet_id=os.environ.get("SARDIS_WALLET_ID", "wallet_demo"),
+)
+
+# Get ADK FunctionTool instances
+sardis_tools = toolkit.get_tools()
+
+# Create agent with Sardis tools
+agent = Agent(
+    name="procurement-agent",
+    model="gemini-2.0-flash",
+    description="A procurement agent that purchases software and API credits.",
+    instruction=(
+        "You are a procurement agent with a Sardis wallet for making payments. "
+        "You help purchase software tools, API credits, and cloud services.\n\n"
+        "Before making any payment:\n"
+        "1. Check the wallet balance to see available funds\n"
+        "2. Check the policy to verify the payment would be allowed\n"
+        "3. Execute the payment with a clear purpose\n"
+        "4. Report the result including transaction ID\n\n"
+        "Always explain your reasoning before taking action."
+    ),
+    tools=sardis_tools,
+)
+
+# Run the agent
+async def main():
+    session_service = InMemorySessionService()
+    runner = Runner(
+        agent=agent,
+        app_name="sardis-demo",
+        session_service=session_service,
+    )
+    
+    session = await session_service.create_session(
+        app_name="sardis-demo",
+        user_id="demo-user",
+    )
+    
+    print("="*60)
+    print("Google ADK Agent + Sardis Payments")
+    print("="*60)
+    print()
+    
+    task = (
+        "I need to purchase $25 of Anthropic API credits for our research "
+        "project. Check the balance first and make sure our policy allows it."
+    )
+    print(f"Task: {task}\n")
+    
+    from google.genai import types
+    user_message = types.Content(
+        role="user",
+        parts=[types.Part(text=task)],
+    )
+    
+    async for event in runner.run_async(
+        user_id="demo-user",
+        session_id=session.id,
+        new_message=user_message,
+    ):
+        if event.is_final_response():
+            for part in event.content.parts:
+                if part.text:
+                    print(f"\nAgent: {part.text}")
+
+import asyncio
+asyncio.run(main())
+```
+
+</CodeGroup>
+
+## Available Tools
+
+The toolkit provides ADK-compatible function tools:
+
+<CardGroup cols={2}>
+  <Card title="sardis_pay" icon="dollar-sign">
+    Execute payment with policy enforcement
+  </Card>
+  <Card title="sardis_check_balance" icon="wallet">
+    Check wallet balance and limits
+  </Card>
+  <Card title="sardis_check_policy" icon="shield-check">
+    Dry-run policy validation
+  </Card>
+  <Card title="sardis_set_policy" icon="sliders">
+    Update spending policy
+  </Card>
+  <Card title="sardis_list_transactions" icon="list">
+    View transaction history
+  </Card>
+</CardGroup>
+
+## SardisToolkit
+
+The main entry point for Google ADK integration:
+
+```python
+from sardis_adk import SardisToolkit
+
+toolkit = SardisToolkit(
+    api_key="sk_live_...",
+    wallet_id="wallet_abc123",
+)
+
+# Get tools for ADK Agent
+tools = toolkit.get_tools()
+
+# Create agent with tools
+agent = Agent(
+    name="payment-agent",
+    model="gemini-2.0-flash",
+    tools=tools,
+)
+```
+
+## Direct Gemini API (Without ADK)
+
+For using Gemini directly without the ADK framework:
+
+```python
+import google.generativeai as genai
+from sardis_adk.gemini_functions import get_sardis_gemini_tools, handle_function_call
+
+# Configure Gemini
+genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
+
+# Create model with Sardis tools
+model = genai.GenerativeModel(
+    "gemini-2.0-flash",
+    tools=[get_sardis_gemini_tools()],
+)
+
+# Start chat
+chat = model.start_chat()
+
+# Send message
+response = chat.send_message("Pay $25 to OpenAI for API credits")
+
+# Handle function calls
+for part in response.parts:
+    if hasattr(part, 'function_call'):
+        result = await handle_function_call(
+            part.function_call,
+            api_key=os.environ["SARDIS_API_KEY"],
+            wallet_id="wallet_abc123",
+        )
+        
+        # Send function response back
+        response = chat.send_message(
+            genai.protos.Content(parts=[genai.protos.Part(
+                function_response=genai.protos.FunctionResponse(
+                    name=part.function_call.name,
+                    response=result,
+                )
+            )])
+        )
+        
+        print(response.text)
+```
+
+## Gemini Models
+
+Supported Gemini models:
+
+<Tabs>
+  <Tab title="Gemini 2.0 Flash">
+    ```python
+    # Fastest, best for most tasks
+    model="gemini-2.0-flash"
+    ```
+  </Tab>
+  <Tab title="Gemini 1.5 Pro">
+    ```python
+    # Most capable, 2M context window
+    model="gemini-1.5-pro"
+    ```
+  </Tab>
+  <Tab title="Gemini 1.5 Flash">
+    ```python
+    # Fast and capable
+    model="gemini-1.5-flash"
+    ```
+  </Tab>
+</Tabs>
+
+## Example: Shopping Agent
+
+```python examples/google_adk_agent.py
+import os
+from google.adk import Agent, Runner
+from google.adk.sessions import InMemorySessionService
+from sardis_adk import SardisToolkit
+
+# Create the toolkit
+toolkit = SardisToolkit(
+    api_key=os.environ.get("SARDIS_API_KEY", "sk_test_demo"),
+    wallet_id=os.environ.get("SARDIS_WALLET_ID", "wallet_demo"),
+)
+
+# Get ADK tools
+sardis_tools = toolkit.get_tools()
+
+# Create agent
+agent = Agent(
+    name="procurement-agent",
+    model="gemini-2.0-flash",
+    description="A procurement agent that purchases software and API credits.",
+    instruction=(
+        "You are a procurement agent with a Sardis wallet for making payments. "
+        "Before making any payment:\n"
+        "1. Check the wallet balance\n"
+        "2. Check the policy to verify payment is allowed\n"
+        "3. Execute the payment with a clear purpose\n"
+        "4. Report the transaction ID\n\n"
+        "Always explain your reasoning before taking action."
+    ),
+    tools=sardis_tools,
+)
+
+async def main():
+    session_service = InMemorySessionService()
+    runner = Runner(
+        agent=agent,
+        app_name="sardis-demo",
+        session_service=session_service,
+    )
+    
+    session = await session_service.create_session(
+        app_name="sardis-demo",
+        user_id="demo-user",
+    )
+    
+    task = (
+        "I need to purchase $25 of Anthropic API credits for our research "
+        "project. Check the balance first and make sure our policy allows it."
+    )
+    
+    from google.genai import types
+    user_message = types.Content(
+        role="user",
+        parts=[types.Part(text=task)],
+    )
+    
+    async for event in runner.run_async(
+        user_id="demo-user",
+        session_id=session.id,
+        new_message=user_message,
+    ):
+        if event.is_final_response():
+            for part in event.content.parts:
+                if part.text:
+                    print(f"\nAgent: {part.text}")
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
+```
+
+## Multimodal Capabilities
+
+Leverage Gemini's vision for receipt analysis:
+
+```python
+from google.genai import types
+
+# Upload receipt image
+receipt_file = genai.upload_file("receipt.jpg")
+
+# Ask agent to process and pay
+user_message = types.Content(
+    role="user",
+    parts=[
+        types.Part(file_data=types.FileData(file_uri=receipt_file.uri)),
+        types.Part(text=(
+            "Analyze this receipt and pay the merchant. "
+            "Verify the amount is correct first."
+        )),
+    ],
+)
+
+async for event in runner.run_async(
+    user_id="user",
+    session_id=session.id,
+    new_message=user_message,
+):
+    # Agent will:
+    # 1. Analyze receipt with vision
+    # 2. Extract merchant and amount
+    # 3. Check policy
+    # 4. Execute payment
+    pass
+```
+
+## Google Cloud Deployment
+
+Deploy on Cloud Run:
+
+```dockerfile Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY . .
+
+CMD ["python", "main.py"]
+```
+
+```bash
+# Build and deploy
+gcloud builds submit --tag gcr.io/PROJECT_ID/sardis-agent
+gcloud run deploy sardis-agent \
+  --image gcr.io/PROJECT_ID/sardis-agent \
+  --set-env-vars SARDIS_API_KEY=sk_live_... \
+  --set-env-vars GOOGLE_API_KEY=...
+```
+
+## Configuration Options
+
+```python
+toolkit = SardisToolkit(
+    # Required
+    api_key="sk_live_...",
+    wallet_id="wallet_abc123",
+    
+    # Optional
+    base_url="https://api.sardis.sh",  # Custom API URL
+)
+```
+
+## Error Handling
+
+```python
+try:
+    async for event in runner.run_async(
+        user_id="user",
+        session_id=session.id,
+        new_message=user_message,
+    ):
+        if event.is_final_response():
+            for part in event.content.parts:
+                if part.text:
+                    print(part.text)
+except Exception as e:
+    print(f"Error: {e}")
+```
+
+## Best Practices
+
+### 1. Provide Clear Instructions
+
+```python
+instruction = (
+    "Before making any payment:\n"
+    "1. Check wallet balance\n"
+    "2. Validate against policy\n"
+    "3. Execute payment\n"
+    "4. Confirm with TX ID"
+)
+```
+
+### 2. Use Gemini 2.0 Flash for Speed
+
+```python
+# Fastest model with good capability
+agent = Agent(
+    name="agent",
+    model="gemini-2.0-flash",
+    tools=sardis_tools,
+)
+```
+
+### 3. Handle Async Properly
+
+```python
+async def main():
+    async for event in runner.run_async(...):
+        # Handle events
+        pass
+
+asyncio.run(main())
+```
+
+### 4. Set Environment Variables
+
+```bash
+export GOOGLE_API_KEY=...
+export SARDIS_API_KEY=sk_live_...
+export SARDIS_WALLET_ID=wallet_...
+```
+
+## Troubleshooting
+
+### Tools Not Called
+
+Make request more explicit:
+
+```python
+user_message = types.Content(
+    role="user",
+    parts=[types.Part(text="Use the sardis_pay tool to pay $25 to OpenAI")],
+)
+```
+
+### Invalid Function Schema
+
+Ensure toolkit is properly initialized:
+
+```python
+toolkit = SardisToolkit(api_key="sk_live_...", wallet_id="wallet_...")
+tools = toolkit.get_tools()  # Must call get_tools()
+```
+
+### API Key Error
+
+```python
+ValueError: GOOGLE_API_KEY not set
+```
+
+Set both API keys:
+
+```python
+export GOOGLE_API_KEY=...
+export SARDIS_API_KEY=sk_live_...
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Anthropic Claude" icon="brain" href="/integrations/anthropic">
+    Build Claude agents with Sardis
+  </Card>
+  <Card title="Vercel AI SDK" icon="triangle" href="/integrations/vercel-ai">
+    TypeScript agents with streaming
+  </Card>
+  <Card title="Policy Engine" icon="shield" href="/core-concepts/policy-engine">
+    Understand spending policy rules
+  </Card>
+  <Card title="API Reference" icon="book" href="/api-reference/python-sdk">
+    Full Python SDK documentation
+  </Card>
+</CardGroup>

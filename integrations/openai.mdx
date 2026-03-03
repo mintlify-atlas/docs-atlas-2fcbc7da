@@ -1,0 +1,671 @@
+---
+title: 'OpenAI Function Calling'
+description: 'Build payment-enabled OpenAI agents with strict mode function calling'
+icon: 'robot'
+---
+
+## Overview
+
+The **sardis-openai** package provides OpenAI-compatible function definitions with **strict mode** enabled, preventing hallucination and ensuring reliable payment execution.
+
+## When to Use OpenAI
+
+- **Function Calling Agents**: Use GPT-4o's native function calling
+- **Assistants API**: Build persistent agents with payment capabilities
+- **Structured Outputs**: Strict mode prevents parameter hallucination
+- **Production Reliability**: Type-safe payment execution
+
+## Installation
+
+```bash
+pip install sardis-openai openai
+```
+
+<Tip>
+  Requires `openai>=1.0.0` and Python 3.9+
+</Tip>
+
+## Quick Start
+
+<CodeGroup>
+
+```python Basic Usage
+import os
+from openai import OpenAI
+from sardis import SardisClient
+from sardis_openai import get_sardis_tools, handle_sardis_tool_call
+
+# Initialize
+openai_client = OpenAI()
+sardis = SardisClient(api_key=os.environ["SARDIS_API_KEY"])
+
+# Create agent wallet
+agent = sardis.agents.create(name="openai-agent")
+wallet = sardis.wallets.create(
+    agent_id=agent.agent_id,
+    chain="base",
+    currency="USDC",
+    limit_per_tx=100.00,
+    limit_total=500.00,
+)
+
+# Get Sardis function definitions
+tools = get_sardis_tools()
+
+# Agent loop
+messages = [
+    {
+        "role": "system",
+        "content": "You are a procurement agent with a Sardis wallet. "
+                   "Use sardis_pay to execute payments."
+    },
+    {
+        "role": "user",
+        "content": "Pay $25 to OpenAI for API credits"
+    }
+]
+
+while True:
+    response = openai_client.chat.completions.create(
+        model="gpt-4o",
+        messages=messages,
+        tools=tools,
+    )
+    
+    message = response.choices[0].message
+    messages.append(message)
+    
+    # Handle function calls
+    if message.tool_calls:
+        for tool_call in message.tool_calls:
+            result = handle_sardis_tool_call(
+                sardis_client=sardis,
+                wallet_id=wallet.wallet_id,
+                tool_call=tool_call,
+            )
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": result,
+            })
+    else:
+        print(message.content)
+        break
+```
+
+```python Full Example
+import json
+import os
+from decimal import Decimal
+from openai import OpenAI
+from sardis import SardisClient
+
+# Initialize
+sardis = SardisClient(api_key=os.environ["SARDIS_API_KEY"])
+
+# Create agent + wallet
+agent = sardis.agents.create(
+    name="openai-procurement-agent",
+    description="OpenAI function-calling procurement agent",
+)
+wallet = sardis.wallets.create(
+    agent_id=agent.agent_id,
+    chain="base_sepolia",
+    currency="USDC",
+    limit_per_tx=Decimal("100.00"),
+    limit_total=Decimal("500.00"),
+)
+
+# OpenAI tool definition
+SARDIS_PAY_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "sardis_pay",
+        "description": (
+            "Execute a payment through Sardis. The payment is checked against "
+            "the wallet's spending policy before execution. Returns the "
+            "transaction result including approval/denial reason."
+        ),
+        "strict": True,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "to": {
+                    "type": "string",
+                    "description": "Recipient address or merchant identifier",
+                },
+                "amount": {
+                    "type": "string",
+                    "description": "Amount in USD (e.g. '25.00')",
+                },
+                "token": {
+                    "type": "string",
+                    "enum": ["USDC", "USDT", "EURC"],
+                    "description": "Stablecoin to use for payment",
+                },
+                "purpose": {
+                    "type": "string",
+                    "description": "Reason for the payment",
+                },
+            },
+            "required": ["to", "amount", "token", "purpose"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+def handle_sardis_pay(args: dict) -> str:
+    """Execute a Sardis payment and return the result as JSON."""
+    result = sardis.wallets.transfer(
+        wallet.wallet_id,
+        destination=args["to"],
+        amount=Decimal(args["amount"]),
+        token=args["token"],
+        chain="base_sepolia",
+        domain="openai.com",
+        memo=args["purpose"],
+    )
+    return json.dumps({
+        "status": result.status,
+        "tx_hash": result.tx_hash,
+        "amount": str(result.amount),
+        "token": result.token,
+        "chain": result.chain,
+    })
+
+# Agent loop
+def run_agent(task: str):
+    client = OpenAI()
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a procurement agent. You help purchase software tools "
+                "and API credits. You have a Sardis wallet with a spending "
+                "policy. Use the sardis_pay tool to execute payments. Always "
+                "explain what you're purchasing and why before paying."
+            ),
+        },
+        {"role": "user", "content": task},
+    ]
+    
+    print(f"Task: {task}\n")
+    
+    while True:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            tools=[SARDIS_PAY_TOOL],
+        )
+        
+        choice = response.choices[0]
+        message = choice.message
+        messages.append(message)
+        
+        # Handle function calls
+        if message.tool_calls:
+            for tool_call in message.tool_calls:
+                args = json.loads(tool_call.function.arguments)
+                print(f"Agent → sardis_pay({args['amount']} {args['token']} to {args['to']})")
+                print(f"  Purpose: {args['purpose']}")
+                
+                result = handle_sardis_pay(args)
+                print(f"  Result: {result}\n")
+                
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": result,
+                })
+        else:
+            # Final response
+            print(f"Agent: {message.content}")
+            break
+
+if __name__ == "__main__":
+    run_agent("Purchase $20 of OpenAI API credits for our research project.")
+```
+
+</CodeGroup>
+
+## Available Tools
+
+The `sardis-openai` package provides 5 pre-configured tools with strict mode:
+
+<CardGroup cols={2}>
+  <Card title="sardis_pay" icon="dollar-sign">
+    Execute payment with policy enforcement
+  </Card>
+  <Card title="sardis_check_balance" icon="wallet">
+    Check wallet balance and limits
+  </Card>
+  <Card title="sardis_check_policy" icon="shield-check">
+    Dry-run policy validation
+  </Card>
+  <Card title="sardis_issue_card" icon="credit-card">
+    Issue virtual card for agent
+  </Card>
+  <Card title="sardis_get_spending_summary" icon="chart-line">
+    Get spending analytics
+  </Card>
+</CardGroup>
+
+## Tool Definitions
+
+### sardis_pay
+
+```python
+{
+    "type": "function",
+    "function": {
+        "name": "sardis_pay",
+        "description": "Execute a payment from an AI agent's wallet with policy enforcement",
+        "strict": True,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "wallet_id": {"type": "string"},
+                "to": {"type": "string"},
+                "amount": {"type": "string"},
+                "token": {"type": "string", "enum": ["USDC", "USDT", "EURC", "PYUSD"]},
+                "purpose": {"type": "string"},
+            },
+            "required": ["wallet_id", "to", "amount", "token", "purpose"],
+            "additionalProperties": False,
+        },
+    },
+}
+```
+
+### sardis_check_balance
+
+```python
+{
+    "type": "function",
+    "function": {
+        "name": "sardis_check_balance",
+        "description": "Check wallet balance, spending limits, and remaining budget",
+        "strict": True,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "wallet_id": {"type": "string"},
+            },
+            "required": ["wallet_id"],
+            "additionalProperties": False,
+        },
+    },
+}
+```
+
+### sardis_check_policy
+
+```python
+{
+    "type": "function",
+    "function": {
+        "name": "sardis_check_policy",
+        "description": "Validate payment against policy before execution",
+        "strict": True,
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "wallet_id": {"type": "string"},
+                "amount": {"type": "string"},
+                "vendor": {"type": "string"},
+            },
+            "required": ["wallet_id", "amount"],
+            "additionalProperties": False,
+        },
+    },
+}
+```
+
+## Import Options
+
+### Get All Tools
+
+```python
+from sardis_openai import get_sardis_tools
+
+tools = get_sardis_tools()
+# Returns list of 5 function definitions
+```
+
+### Use Specific Tools
+
+```python
+from sardis_openai import SARDIS_TOOL_DEFINITIONS
+
+# Get only payment and balance tools
+tools = [
+    SARDIS_TOOL_DEFINITIONS[0],  # sardis_pay
+    SARDIS_TOOL_DEFINITIONS[1],  # sardis_check_balance
+]
+```
+
+### Tool Handler
+
+The package includes a handler for processing tool calls:
+
+```python
+from sardis_openai import handle_sardis_tool_call
+
+result = handle_sardis_tool_call(
+    sardis_client=sardis,
+    wallet_id=wallet.wallet_id,
+    tool_call=tool_call,
+)
+```
+
+## Strict Mode Benefits
+
+Strict mode (`"strict": True`) ensures:
+
+1. **No Hallucinated Parameters**: OpenAI won't invent parameter values
+2. **Type Safety**: All parameters validated against schema
+3. **Required Fields**: Missing required fields cause immediate errors
+4. **No Extra Fields**: `additionalProperties: False` prevents unexpected data
+
+**Without strict mode:**
+
+```json
+// Agent might hallucinate:
+{
+  "to": "openai.com",
+  "amount": "25.00",
+  "token": "USDC",
+  "purpose": "API credits",
+  "urgent": true,  // ❌ Hallucinated field
+  "category": "software"  // ❌ Not in schema
+}
+```
+
+**With strict mode:**
+
+```json
+// Agent constrained to schema:
+{
+  "to": "openai.com",
+  "amount": "25.00",
+  "token": "USDC",
+  "purpose": "API credits"
+}  // ✓ Exactly matches schema
+```
+
+## Assistants API
+
+Use Sardis with OpenAI Assistants:
+
+```python
+from openai import OpenAI
+from sardis import SardisClient
+from sardis_openai import get_sardis_tools
+
+client = OpenAI()
+sardis = SardisClient(api_key="sk_live_...")
+
+# Create assistant with Sardis tools
+assistant = client.beta.assistants.create(
+    name="Procurement Assistant",
+    instructions=(
+        "You are a procurement assistant with a Sardis wallet. "
+        "Help users purchase software and API credits."
+    ),
+    model="gpt-4o",
+    tools=get_sardis_tools(),
+)
+
+# Create thread
+thread = client.beta.threads.create()
+
+# Add message
+client.beta.threads.messages.create(
+    thread_id=thread.id,
+    role="user",
+    content="Pay $30 to Anthropic for API credits",
+)
+
+# Run assistant
+run = client.beta.threads.runs.create(
+    thread_id=thread.id,
+    assistant_id=assistant.id,
+)
+
+# Handle tool calls
+while run.status == "requires_action":
+    tool_outputs = []
+    for tool_call in run.required_action.submit_tool_outputs.tool_calls:
+        result = handle_sardis_tool_call(
+            sardis_client=sardis,
+            wallet_id=wallet.wallet_id,
+            tool_call=tool_call,
+        )
+        tool_outputs.append({
+            "tool_call_id": tool_call.id,
+            "output": result,
+        })
+    
+    run = client.beta.threads.runs.submit_tool_outputs(
+        thread_id=thread.id,
+        run_id=run.id,
+        tool_outputs=tool_outputs,
+    )
+
+# Get response
+messages = client.beta.threads.messages.list(thread_id=thread.id)
+print(messages.data[0].content[0].text.value)
+```
+
+## Error Handling
+
+```python
+import json
+from decimal import Decimal
+from openai import OpenAI
+from sardis import SardisClient
+from sardis.exceptions import PolicyViolationError, InsufficientBalanceError
+
+def handle_sardis_pay(args: dict, sardis: SardisClient, wallet_id: str) -> str:
+    try:
+        result = sardis.wallets.transfer(
+            wallet_id,
+            destination=args["to"],
+            amount=Decimal(args["amount"]),
+            token=args["token"],
+            chain="base",
+            domain=args["to"],
+            memo=args["purpose"],
+        )
+        return json.dumps({
+            "success": True,
+            "tx_hash": result.tx_hash,
+            "amount": str(result.amount),
+            "token": result.token,
+        })
+    except PolicyViolationError as e:
+        return json.dumps({
+            "success": False,
+            "error": "policy_violation",
+            "message": str(e),
+        })
+    except InsufficientBalanceError as e:
+        return json.dumps({
+            "success": False,
+            "error": "insufficient_balance",
+            "message": str(e),
+        })
+    except Exception as e:
+        return json.dumps({
+            "success": False,
+            "error": "unknown",
+            "message": str(e),
+        })
+```
+
+## Streaming Responses
+
+Use with OpenAI's streaming API:
+
+```python
+stream = client.chat.completions.create(
+    model="gpt-4o",
+    messages=messages,
+    tools=tools,
+    stream=True,
+)
+
+for chunk in stream:
+    if chunk.choices[0].delta.content:
+        print(chunk.choices[0].delta.content, end="")
+    
+    if chunk.choices[0].delta.tool_calls:
+        # Handle function calls
+        for tool_call in chunk.choices[0].delta.tool_calls:
+            if tool_call.function.name:
+                print(f"\nCalling {tool_call.function.name}...")
+```
+
+## Best Practices
+
+### 1. Use Strict Mode Always
+
+```python
+# ✓ Good - Strict mode enabled
+{
+    "type": "function",
+    "function": {
+        "name": "sardis_pay",
+        "strict": True,
+        "parameters": {...}
+    }
+}
+
+# ❌ Bad - No strict mode
+{
+    "type": "function",
+    "function": {
+        "name": "sardis_pay",
+        "parameters": {...}
+    }
+}
+```
+
+### 2. Validate Amount Format
+
+```python
+def handle_sardis_pay(args: dict) -> str:
+    try:
+        amount = Decimal(args["amount"])
+    except (ValueError, KeyError):
+        return json.dumps({"success": False, "error": "Invalid amount format"})
+    
+    if amount <= 0:
+        return json.dumps({"success": False, "error": "Amount must be positive"})
+    
+    # Proceed with payment
+```
+
+### 3. Return Structured JSON
+
+```python
+# ✓ Good - Structured response
+return json.dumps({
+    "success": True,
+    "tx_hash": "0x7f3b...a2c9",
+    "amount": "25.00",
+    "token": "USDC",
+    "chain": "base",
+})
+
+# ❌ Bad - Plain text
+return "Payment successful: 0x7f3b...a2c9"
+```
+
+### 4. Handle All Error Cases
+
+```python
+try:
+    result = sardis.wallets.transfer(...)
+except PolicyViolationError:
+    return json.dumps({"error": "policy_violation"})
+except InsufficientBalanceError:
+    return json.dumps({"error": "insufficient_balance"})
+except NetworkError:
+    return json.dumps({"error": "network_error"})
+except Exception as e:
+    return json.dumps({"error": "unknown", "message": str(e)})
+```
+
+## Example: Multi-Step Procurement
+
+```python
+def run_procurement_agent(task: str):
+    client = OpenAI()
+    sardis = SardisClient(api_key="sk_live_...")
+    
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a procurement agent. For each purchase:"
+                "1. Check wallet balance first"
+                "2. Validate against policy"
+                "3. Execute payment"
+                "4. Confirm with transaction hash"
+            ),
+        },
+        {"role": "user", "content": task},
+    ]
+    
+    tools = get_sardis_tools()
+    
+    while True:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            tools=tools,
+        )
+        
+        message = response.choices[0].message
+        messages.append(message)
+        
+        if message.tool_calls:
+            for tool_call in message.tool_calls:
+                result = handle_sardis_tool_call(
+                    sardis_client=sardis,
+                    wallet_id="wallet_abc123",
+                    tool_call=tool_call,
+                )
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": result,
+                })
+        else:
+            return message.content
+
+# Run
+result = run_procurement_agent(
+    "Purchase $30 of Anthropic API credits and $50 of AWS credits. "
+    "Check balance before each payment."
+)
+print(result)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Vercel AI SDK" icon="triangle" href="/integrations/vercel-ai">
+    Build streaming payment agents with Vercel AI
+  </Card>
+  <Card title="Anthropic Claude" icon="brain" href="/integrations/anthropic">
+    Use Claude's Agent SDK with Sardis
+  </Card>
+  <Card title="Policy Engine" icon="shield" href="/core-concepts/policy-engine">
+    Understand spending policy enforcement
+  </Card>
+  <Card title="API Reference" icon="book" href="/api-reference/python-sdk">
+    Full Python SDK documentation
+  </Card>
+</CardGroup>

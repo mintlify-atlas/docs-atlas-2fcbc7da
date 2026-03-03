@@ -1,0 +1,600 @@
+---
+title: 'UCP (Universal Commerce Protocol)'
+description: 'Standardized protocol for agent-to-merchant payments'
+icon: 'store'
+---
+
+<Info>
+  UCP provides a standardized framework for AI agents to interact with merchants and payment processors.
+</Info>
+
+## Overview
+
+The **Universal Commerce Protocol (UCP)** enables AI agents to make purchases from merchants using a standardized interface, regardless of the merchant's payment processor or underlying infrastructure.
+
+**Problem:** Each merchant uses different payment APIs (Stripe, PayPal, Square, etc.) with different formats, authentication methods, and workflows.
+
+**Solution:** UCP provides a unified interface that agents can use to interact with any merchant, abstracting away the complexity of individual payment processors.
+
+---
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Unified Interface" icon="grid">
+    Single API for all merchants and processors
+  </Card>
+  <Card title="Auto-Discovery" icon="magnifying-glass">
+    Merchants advertise UCP capabilities
+  </Card>
+  <Card title="Multi-Currency" icon="coins">
+    Support for fiat and crypto payments
+  </Card>
+  <Card title="Receipt Standards" icon="receipt">
+    Machine-readable transaction receipts
+  </Card>
+</CardGroup>
+
+---
+
+## Protocol Flow
+
+<Steps>
+  <Step title="1. Discovery">
+    Agent discovers merchant's UCP capabilities:
+    
+    ```http
+    GET https://merchant.com/.well-known/ucp.json
+    ```
+    
+    **Response:**
+    ```json
+    {
+      "version": "1.0",
+      "merchant_id": "merchant_abc123",
+      "name": "Example Merchant",
+      "currencies": ["USDC", "USDT", "USD"],
+      "payment_methods": ["crypto", "card", "bank_transfer"],
+      "endpoints": {
+        "cart": "https://merchant.com/ucp/cart",
+        "checkout": "https://merchant.com/ucp/checkout",
+        "status": "https://merchant.com/ucp/status"
+      },
+      "public_key": "0x..."
+    }
+    ```
+  </Step>
+  
+  <Step title="2. Cart Creation">
+    Agent creates a cart with desired items:
+    
+    ```http
+    POST https://merchant.com/ucp/cart
+    Content-Type: application/json
+    Authorization: Bearer agent_token
+    
+    {
+      "agent_id": "agent_xyz",
+      "items": [
+        {
+          "product_id": "prod_123",
+          "quantity": 2,
+          "customization": {
+            "size": "large",
+            "color": "blue"
+          }
+        }
+      ],
+      "currency": "USDC"
+    }
+    ```
+    
+    **Response:**
+    ```json
+    {
+      "cart_id": "cart_def456",
+      "items": [
+        {
+          "product_id": "prod_123",
+          "name": "Premium Widget",
+          "quantity": 2,
+          "unit_price": "25.00",
+          "total": "50.00"
+        }
+      ],
+      "subtotal": "50.00",
+      "tax": "4.50",
+      "shipping": "5.00",
+      "total": "59.50",
+      "currency": "USDC",
+      "expires_at": "2026-03-03T10:30:00Z"
+    }
+    ```
+  </Step>
+  
+  <Step title="3. Checkout">
+    Agent initiates checkout with payment details:
+    
+    ```http
+    POST https://merchant.com/ucp/checkout
+    Content-Type: application/json
+    
+    {
+      "cart_id": "cart_def456",
+      "payment_method": "crypto",
+      "payment_details": {
+        "token": "USDC",
+        "chain": "base",
+        "from_address": "0x...",
+        "sardis_payment_id": "pay_ghi789"
+      },
+      "shipping_address": {
+        "street": "123 Main St",
+        "city": "San Francisco",
+        "state": "CA",
+        "zip": "94102",
+        "country": "US"
+      }
+    }
+    ```
+    
+    **Response:**
+    ```json
+    {
+      "order_id": "order_jkl012",
+      "status": "pending",
+      "payment_address": "0x...",
+      "amount_due": "59.50",
+      "currency": "USDC",
+      "chain": "base",
+      "expires_at": "2026-03-03T10:15:00Z"
+    }
+    ```
+  </Step>
+  
+  <Step title="4. Payment Execution">
+    Agent executes payment via Sardis:
+    
+    ```python
+    # Sardis executes the payment
+    result = sardis.payments.create(
+        from_wallet=agent.wallet_id,
+        to_address=checkout.payment_address,
+        amount=checkout.amount_due,
+        token="USDC",
+        chain="base",
+        metadata={
+            "merchant_id": merchant.merchant_id,
+            "order_id": checkout.order_id,
+            "protocol": "ucp"
+        }
+    )
+    ```
+  </Step>
+  
+  <Step title="5. Confirmation">
+    Merchant confirms payment and fulfills order:
+    
+    ```http
+    GET https://merchant.com/ucp/status?order_id=order_jkl012
+    ```
+    
+    **Response:**
+    ```json
+    {
+      "order_id": "order_jkl012",
+      "status": "completed",
+      "payment_confirmed": true,
+      "tx_hash": "0x...",
+      "receipt": {
+        "receipt_id": "receipt_mno345",
+        "receipt_url": "https://merchant.com/receipts/mno345",
+        "items": [...],
+        "total": "59.50",
+        "currency": "USDC",
+        "paid_at": "2026-03-03T10:10:00Z"
+      },
+      "fulfillment": {
+        "status": "shipped",
+        "tracking_number": "1Z999AA1...",
+        "carrier": "UPS",
+        "estimated_delivery": "2026-03-05"
+      }
+    }
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Use Cases
+
+### E-Commerce Purchases
+
+Agents can shop on behalf of users:
+
+```python
+from sardis import Sardis, UCPClient
+
+sardis = Sardis(api_key="sk_...")
+ucp = UCPClient(sardis)
+
+# Discover merchant
+merchant = ucp.discover("https://store.example.com")
+
+# Create cart
+cart = ucp.create_cart(
+    merchant_id=merchant.merchant_id,
+    items=[
+        {"product_id": "laptop_pro_16", "quantity": 1}
+    ]
+)
+
+print(f"Total: ${cart.total} {cart.currency}")
+
+# Checkout and pay
+order = ucp.checkout(
+    cart_id=cart.cart_id,
+    wallet_id=agent.wallet_id,
+    shipping_address=user.shipping_address
+)
+
+print(f"Order placed: {order.order_id}")
+print(f"Tracking: {order.tracking_number}")
+```
+
+### SaaS Subscriptions
+
+Agents can manage software subscriptions:
+
+```python
+# Subscribe to service
+subscription = ucp.subscribe(
+    merchant_id="saas_provider",
+    plan="pro",
+    billing_cycle="monthly",
+    wallet_id=agent.wallet_id
+)
+
+print(f"Subscribed to {subscription.plan}")
+print(f"Next billing: {subscription.next_billing_date}")
+
+# Cancel subscription
+ucp.cancel_subscription(
+    subscription_id=subscription.subscription_id,
+    reason="switching_providers"
+)
+```
+
+### API Credit Purchases
+
+Agents can top up API credits automatically:
+
+```python
+# Check credit balance
+balance = ucp.get_balance(
+    merchant_id="api_provider",
+    account_id=agent.account_id
+)
+
+if balance < 1000:
+    # Auto-purchase more credits
+    purchase = ucp.purchase_credits(
+        merchant_id="api_provider",
+        amount=5000,  # 5000 API credits
+        wallet_id=agent.wallet_id
+    )
+    print(f"Purchased {purchase.amount} credits")
+```
+
+### Digital Goods
+
+Agents can purchase digital products:
+
+```python
+# Purchase digital asset
+purchase = ucp.purchase(
+    merchant_id="digital_marketplace",
+    item_type="dataset",
+    item_id="financial_data_2026_q1",
+    wallet_id=agent.wallet_id
+)
+
+# Download asset
+asset_url = purchase.download_url
+download_file(asset_url, local_path="./datasets/")
+```
+
+---
+
+## Merchant Integration
+
+Merchants can add UCP support to accept agent payments:
+
+### 1. Advertise Capabilities
+
+Create `/.well-known/ucp.json`:
+
+```json
+{
+  "version": "1.0",
+  "merchant_id": "your_merchant_id",
+  "name": "Your Store",
+  "currencies": ["USDC", "USDT"],
+  "payment_methods": ["crypto"],
+  "endpoints": {
+    "cart": "https://yourstore.com/ucp/cart",
+    "checkout": "https://yourstore.com/ucp/checkout",
+    "status": "https://yourstore.com/ucp/status"
+  },
+  "public_key": "0x..."
+}
+```
+
+### 2. Implement Endpoints
+
+```python
+from flask import Flask, request, jsonify
+from sardis import SardisClient
+
+app = Flask(__name__)
+sardis = SardisClient(api_key="sk_...")
+
+@app.route('/ucp/cart', methods=['POST'])
+def create_cart():
+    data = request.json
+    
+    # Calculate cart total
+    cart = {
+        "cart_id": generate_cart_id(),
+        "items": calculate_items(data['items']),
+        "subtotal": calculate_subtotal(data['items']),
+        "tax": calculate_tax(data['items']),
+        "total": calculate_total(data['items']),
+        "currency": data['currency'],
+        "expires_at": (now() + timedelta(minutes=15)).isoformat()
+    }
+    
+    # Store cart
+    carts_db.save(cart)
+    
+    return jsonify(cart)
+
+@app.route('/ucp/checkout', methods=['POST'])
+def checkout():
+    data = request.json
+    cart = carts_db.get(data['cart_id'])
+    
+    # Generate payment address
+    payment_address = sardis.wallets.get_address(
+        wallet_id="merchant_wallet"
+    )
+    
+    # Create order
+    order = {
+        "order_id": generate_order_id(),
+        "cart_id": cart['cart_id'],
+        "status": "pending",
+        "payment_address": payment_address,
+        "amount_due": cart['total'],
+        "currency": cart['currency']
+    }
+    
+    # Store order
+    orders_db.save(order)
+    
+    return jsonify(order)
+
+@app.route('/ucp/status', methods=['GET'])
+def order_status():
+    order_id = request.args.get('order_id')
+    order = orders_db.get(order_id)
+    
+    # Check payment status
+    payment = sardis.payments.get(
+        merchant_wallet_id="merchant_wallet",
+        order_id=order_id
+    )
+    
+    if payment and payment.status == "completed":
+        order['status'] = "completed"
+        order['payment_confirmed'] = True
+        order['tx_hash'] = payment.tx_hash
+        
+        # Fulfill order
+        fulfillment = fulfill_order(order)
+        order['fulfillment'] = fulfillment
+    
+    return jsonify(order)
+```
+
+---
+
+## Receipt Format
+
+UCP defines a standard receipt format:
+
+```json
+{
+  "receipt_id": "receipt_abc123",
+  "order_id": "order_xyz789",
+  "merchant": {
+    "merchant_id": "merchant_def456",
+    "name": "Example Store",
+    "address": "123 Merchant St, City, State 12345",
+    "tax_id": "12-3456789"
+  },
+  "customer": {
+    "agent_id": "agent_ghi012",
+    "name": "Shopping Assistant",
+    "email": "agent@example.com"
+  },
+  "items": [
+    {
+      "product_id": "prod_123",
+      "name": "Premium Widget",
+      "quantity": 2,
+      "unit_price": "25.00",
+      "total": "50.00"
+    }
+  ],
+  "amounts": {
+    "subtotal": "50.00",
+    "tax": "4.50",
+    "shipping": "5.00",
+    "total": "59.50",
+    "currency": "USDC"
+  },
+  "payment": {
+    "method": "crypto",
+    "token": "USDC",
+    "chain": "base",
+    "tx_hash": "0x...",
+    "paid_at": "2026-03-03T10:10:00Z"
+  },
+  "receipt_url": "https://merchant.com/receipts/abc123",
+  "issued_at": "2026-03-03T10:10:00Z"
+}
+```
+
+Agents can parse this structured format for accounting and expense tracking.
+
+---
+
+## Security
+
+### Merchant Verification
+
+Verify merchant identity before payment:
+
+```python
+# Verify merchant's public key
+merchant_info = ucp.discover("https://merchant.com")
+
+if not verify_merchant_signature(
+    merchant_id=merchant_info.merchant_id,
+    public_key=merchant_info.public_key,
+    signature=merchant_info.signature
+):
+    raise UnverifiedMerchantError("Cannot verify merchant identity")
+```
+
+### Payment Address Verification
+
+Ensure payment address belongs to merchant:
+
+```python
+# Verify payment address
+if not sardis.verify_address(
+    address=checkout.payment_address,
+    merchant_id=merchant.merchant_id
+):
+    raise InvalidAddressError("Payment address not verified")
+```
+
+### Receipt Signatures
+
+Merchants sign receipts for authenticity:
+
+```python
+# Verify receipt signature
+receipt = order.receipt
+
+if not verify_signature(
+    message=receipt_hash(receipt),
+    signature=receipt.signature,
+    public_key=merchant.public_key
+):
+    raise InvalidReceiptError("Receipt signature invalid")
+```
+
+---
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Cache Merchant Capabilities" icon="database">
+    Cache UCP discovery results to reduce latency:
+    
+    ```python
+    # Cache for 24 hours
+    merchant_cache.set(
+        f"ucp:{merchant_domain}",
+        merchant_capabilities,
+        ttl=86400
+    )
+    ```
+  </Accordion>
+  
+  <Accordion title="Validate Cart Before Checkout" icon="check">
+    Always validate cart contents and pricing:
+    
+    ```python
+    # Validate cart hasn't changed
+    fresh_cart = ucp.get_cart(cart_id)
+    if fresh_cart.total != cached_cart.total:
+        raise CartChangedError("Cart total changed")
+    ```
+  </Accordion>
+  
+  <Accordion title="Handle Cart Expiration" icon="clock">
+    Carts expire after 15 minutes by default:
+    
+    ```python
+    if cart.expires_at < now():
+        # Recreate cart
+        cart = ucp.create_cart(merchant_id, items)
+    ```
+  </Accordion>
+  
+  <Accordion title="Store Receipts" icon="receipt">
+    Save receipts for accounting and auditing:
+    
+    ```python
+    # Save to ledger
+    sardis.ledger.record_receipt(
+        agent_id=agent.agent_id,
+        receipt=order.receipt,
+        order_id=order.order_id
+    )
+    ```
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## Why UCP Matters
+
+<CardGroup cols={2}>
+  <Card title="Simplified Integration" icon="plug">
+    Single API for all merchants
+  </Card>
+  <Card title="Standardized Receipts" icon="file-invoice">
+    Machine-readable transaction records
+  </Card>
+  <Card title="Multi-Currency Support" icon="globe">
+    Pay in any supported currency
+  </Card>
+  <Card title="Agent-Optimized" icon="robot">
+    Designed for programmatic access
+  </Card>
+</CardGroup>
+
+---
+
+## Learn More
+
+<CardGroup cols={2}>
+  <Card title="AP2 Protocol" icon="shield-check" href="/resources/protocols/ap2">
+    Payment mandate chain
+  </Card>
+  <Card title="A2A Protocol" icon="handshake" href="/resources/protocols/a2a">
+    Agent-to-agent payments
+  </Card>
+  <Card title="Merchant API" icon="code" href="/api-reference/merchants">
+    Merchant integration API
+  </Card>
+  <Card title="Examples" icon="book" href="/resources/examples">
+    See UCP in action
+  </Card>
+</CardGroup>

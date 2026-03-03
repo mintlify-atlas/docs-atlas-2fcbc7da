@@ -1,0 +1,586 @@
+---
+title: 'Mastra'
+description: 'Build TypeScript agents with Mastra and Sardis payment capabilities'
+icon: 'wand-magic-sparkles'
+---
+
+## Overview
+
+Integrate Sardis payments into **Mastra** agents to build production-ready TypeScript agents with policy-enforced payment capabilities. Mastra's workflow engine combined with Sardis creates powerful autonomous procurement systems.
+
+<Note>
+  Mastra integration is community-contributed. The examples below show how to integrate Sardis using Mastra's tool system and the `@sardis/ai-sdk` package.
+</Note>
+
+## When to Use Mastra
+
+- **TypeScript Workflows**: Build agents in TypeScript with strong typing
+- **Production Agents**: Deploy enterprise-ready agent systems
+- **Workflow Orchestration**: Multi-step procurement workflows
+- **Knowledge Integration**: Connect agents to your knowledge base
+- **Memory & Context**: Persistent agent memory across sessions
+
+## Installation
+
+```bash
+npm install @mastra/core @sardis/ai-sdk ai
+# or
+pnpm add @mastra/core @sardis/ai-sdk ai
+```
+
+<Tip>
+  Requires Node.js 18+ and `@mastra/core>=0.1.0`
+</Tip>
+
+## Quick Start
+
+<CodeGroup>
+
+```typescript Basic Setup
+import { Mastra } from '@mastra/core'
+import { createSardisTools } from '@sardis/ai-sdk'
+import { openai } from '@ai-sdk/openai'
+
+// Create Sardis tools
+const sardisTools = createSardisTools({
+  apiKey: process.env.SARDIS_API_KEY!,
+  walletId: process.env.SARDIS_WALLET_ID!,
+})
+
+// Create Mastra agent
+const mastra = new Mastra({
+  agents: [
+    {
+      name: 'procurement-agent',
+      instructions: (
+        'You are a procurement agent with a Sardis wallet. ' +
+        'You help purchase software tools and API credits. ' +
+        'Always check the balance before making payments.'
+      ),
+      model: openai('gpt-4o'),
+      tools: sardisTools,
+    },
+  ],
+})
+
+// Use the agent
+const agent = mastra.getAgent('procurement-agent')
+const result = await agent.generate(
+  'Check my balance and pay $50 to OpenAI for API credits'
+)
+
+console.log(result.text)
+```
+
+```typescript Full Workflow
+import { Mastra } from '@mastra/core'
+import { createSardisTools } from '@sardis/ai-sdk'
+import { openai } from '@ai-sdk/openai'
+import { z } from 'zod'
+
+// Create Sardis tools
+const sardisTools = createSardisTools({
+  apiKey: process.env.SARDIS_API_KEY!,
+  walletId: 'wallet_abc123',
+  maxPaymentAmount: 100,  // Policy: max $100 per payment
+  blockedCategories: ['gambling', 'adult'],
+})
+
+// Create Mastra instance with workflow
+const mastra = new Mastra({
+  agents: [
+    {
+      name: 'researcher',
+      instructions: (
+        'You research vendors and estimate costs. ' +
+        'Provide detailed analysis of options.'
+      ),
+      model: openai('gpt-4o'),
+      tools: {
+        ...sardisTools,
+      },
+    },
+    {
+      name: 'purchaser',
+      instructions: (
+        'You execute approved purchases. ' +
+        'Always verify policy compliance before paying.'
+      ),
+      model: openai('gpt-4o'),
+      tools: sardisTools,
+    },
+  ],
+  workflows: [
+    {
+      name: 'purchase-workflow',
+      steps: [
+        {
+          id: 'research',
+          execute: async ({ input }) => {
+            const researcher = mastra.getAgent('researcher')
+            const result = await researcher.generate(
+              `Research options for: ${input.request}`
+            )
+            return { research: result.text }
+          },
+        },
+        {
+          id: 'purchase',
+          execute: async ({ input, context }) => {
+            const purchaser = mastra.getAgent('purchaser')
+            const result = await purchaser.generate(
+              `Based on this research:\n${context.research}\n\n` +
+              `Execute the recommended purchase.`
+            )
+            return { result: result.text }
+          },
+        },
+      ],
+    },
+  ],
+})
+
+// Run workflow
+const workflow = mastra.getWorkflow('purchase-workflow')
+const result = await workflow.execute({
+  input: {
+    request: 'OpenAI API credits for $50',
+  },
+})
+
+console.log('Purchase result:', result.result)
+```
+
+</CodeGroup>
+
+## Creating Agents
+
+Define Mastra agents with Sardis tools:
+
+```typescript
+import { Mastra } from '@mastra/core'
+import { createSardisTools } from '@sardis/ai-sdk'
+import { openai } from '@ai-sdk/openai'
+
+const sardisTools = createSardisTools({
+  apiKey: process.env.SARDIS_API_KEY!,
+  walletId: 'wallet_abc123',
+})
+
+const mastra = new Mastra({
+  agents: [
+    {
+      name: 'payment-agent',
+      instructions: (
+        'You are a payment agent. ' +
+        'Before any payment:\n' +
+        '1. Check wallet balance\n' +
+        '2. Verify policy compliance\n' +
+        '3. Execute payment\n' +
+        '4. Confirm with transaction ID'
+      ),
+      model: openai('gpt-4o'),
+      tools: sardisTools,
+    },
+  ],
+})
+
+// Use agent
+const agent = mastra.getAgent('payment-agent')
+const result = await agent.generate('Pay $25 to Anthropic for API credits')
+```
+
+## Workflows
+
+Orchestrate multi-step procurement workflows:
+
+```typescript
+import { Mastra } from '@mastra/core'
+import { createSardisTools } from '@sardis/ai-sdk'
+
+const sardisTools = createSardisTools({
+  apiKey: process.env.SARDIS_API_KEY!,
+  walletId: 'wallet_abc123',
+})
+
+const mastra = new Mastra({
+  agents: [
+    { name: 'researcher', model: openai('gpt-4o'), tools: sardisTools },
+    { name: 'purchaser', model: openai('gpt-4o'), tools: sardisTools },
+    { name: 'auditor', model: openai('gpt-4o'), tools: sardisTools },
+  ],
+  workflows: [
+    {
+      name: 'procurement-pipeline',
+      steps: [
+        {
+          id: 'research',
+          execute: async ({ input }) => {
+            const researcher = mastra.getAgent('researcher')
+            const result = await researcher.generate(
+              `Research vendors for: ${input.product}. ` +
+              `Find pricing and reviews.`
+            )
+            return { research: result.text }
+          },
+        },
+        {
+          id: 'approve',
+          execute: async ({ context }) => {
+            // Add approval logic
+            const approved = true  // Implement your approval logic
+            if (!approved) {
+              throw new Error('Purchase not approved')
+            }
+            return { approved }
+          },
+        },
+        {
+          id: 'purchase',
+          execute: async ({ input, context }) => {
+            const purchaser = mastra.getAgent('purchaser')
+            const result = await purchaser.generate(
+              `Based on research:\n${context.research}\n\n` +
+              `Purchase ${input.product} for ${input.budget}`
+            )
+            return { transaction: result.text }
+          },
+        },
+        {
+          id: 'audit',
+          execute: async ({ context }) => {
+            const auditor = mastra.getAgent('auditor')
+            const result = await auditor.generate(
+              `Review this transaction:\n${context.transaction}\n\n` +
+              `Verify it matches the research and budget.`
+            )
+            return { audit: result.text }
+          },
+        },
+      ],
+    },
+  ],
+})
+
+// Execute workflow
+const workflow = mastra.getWorkflow('procurement-pipeline')
+const result = await workflow.execute({
+  input: {
+    product: 'OpenAI API credits',
+    budget: '$50',
+  },
+})
+
+console.log('Audit result:', result.audit)
+```
+
+## Memory & Context
+
+Use Mastra's memory for persistent context:
+
+```typescript
+import { Mastra } from '@mastra/core'
+import { createSardisTools } from '@sardis/ai-sdk'
+
+const mastra = new Mastra({
+  agents: [
+    {
+      name: 'procurement-agent',
+      instructions: 'You are a procurement agent with memory of past purchases.',
+      model: openai('gpt-4o'),
+      tools: createSardisTools({
+        apiKey: process.env.SARDIS_API_KEY!,
+        walletId: 'wallet_abc123',
+      }),
+      memory: {
+        type: 'simple',  // Use Mastra's memory system
+      },
+    },
+  ],
+})
+
+const agent = mastra.getAgent('procurement-agent')
+
+// First purchase
+await agent.generate('Pay $50 to OpenAI for API credits')
+
+// Later - agent remembers context
+await agent.generate('How much have I spent on OpenAI this month?')
+// Agent can recall previous transactions from memory
+```
+
+## Knowledge Integration
+
+Connect agents to knowledge bases:
+
+```typescript
+import { Mastra } from '@mastra/core'
+import { createSardisTools } from '@sardis/ai-sdk'
+
+const mastra = new Mastra({
+  agents: [
+    {
+      name: 'informed-buyer',
+      instructions: 'You purchase based on vendor knowledge.',
+      model: openai('gpt-4o'),
+      tools: createSardisTools({
+        apiKey: process.env.SARDIS_API_KEY!,
+        walletId: 'wallet_abc123',
+      }),
+      knowledge: [
+        {
+          name: 'vendor-database',
+          description: 'Vendor information and reviews',
+          // Add knowledge source (vector DB, etc.)
+        },
+      ],
+    },
+  ],
+})
+
+const agent = mastra.getAgent('informed-buyer')
+
+// Agent queries knowledge before purchasing
+await agent.generate(
+  'Purchase API credits from the most reliable vendor under $100'
+)
+```
+
+## Tool Sets
+
+Use different Sardis tool sets:
+
+```typescript
+import {
+  createSardisTools,
+  createMinimalSardisTools,
+  createReadOnlySardisTools,
+} from '@sardis/ai-sdk'
+
+const mastra = new Mastra({
+  agents: [
+    {
+      name: 'buyer',
+      model: openai('gpt-4o'),
+      tools: createSardisTools({  // Full tool set
+        apiKey: process.env.SARDIS_API_KEY!,
+        walletId: 'wallet_abc123',
+      }),
+    },
+    {
+      name: 'simple-buyer',
+      model: openai('gpt-4o'),
+      tools: createMinimalSardisTools({  // Just pay + balance
+        apiKey: process.env.SARDIS_API_KEY!,
+        walletId: 'wallet_abc123',
+      }),
+    },
+    {
+      name: 'auditor',
+      model: openai('gpt-4o'),
+      tools: createReadOnlySardisTools({  // No payments
+        apiKey: process.env.SARDIS_API_KEY!,
+        walletId: 'wallet_abc123',
+      }),
+    },
+  ],
+})
+```
+
+## Policy Enforcement
+
+Enforce spending policies through Sardis:
+
+```typescript
+const sardisTools = createSardisTools({
+  apiKey: process.env.SARDIS_API_KEY!,
+  walletId: 'wallet_abc123',
+  
+  // Set policy guardrails
+  maxPaymentAmount: 100,  // Max $100 per payment
+  blockedCategories: ['gambling', 'adult'],
+  allowedMerchants: ['openai.com', 'anthropic.com', 'aws.com'],
+})
+
+const mastra = new Mastra({
+  agents: [
+    {
+      name: 'policy-enforced-buyer',
+      model: openai('gpt-4o'),
+      tools: sardisTools,
+    },
+  ],
+})
+
+// This will fail with policy violation
+const agent = mastra.getAgent('policy-enforced-buyer')
+await agent.generate('Pay $500 to random-vendor.com')
+// Response: "Payment blocked: Amount $500 exceeds maximum allowed"
+```
+
+## Streaming Responses
+
+```typescript
+import { Mastra } from '@mastra/core'
+import { createSardisTools } from '@sardis/ai-sdk'
+
+const mastra = new Mastra({
+  agents: [
+    {
+      name: 'streaming-agent',
+      model: openai('gpt-4o'),
+      tools: createSardisTools({
+        apiKey: process.env.SARDIS_API_KEY!,
+        walletId: 'wallet_abc123',
+      }),
+    },
+  ],
+})
+
+const agent = mastra.getAgent('streaming-agent')
+
+// Stream response
+const stream = await agent.stream('Check balance and pay $50 to AWS')
+
+for await (const chunk of stream) {
+  process.stdout.write(chunk.text)
+}
+```
+
+## Error Handling
+
+```typescript
+try {
+  const agent = mastra.getAgent('payment-agent')
+  const result = await agent.generate('Pay $1000 to vendor_xyz')
+  console.log(result.text)
+} catch (error) {
+  if (error.message.includes('policy violation')) {
+    console.error('Payment blocked by policy')
+  } else if (error.message.includes('insufficient balance')) {
+    console.error('Not enough funds')
+  } else {
+    console.error('Unexpected error:', error)
+  }
+}
+```
+
+## Best Practices
+
+### 1. Use Workflows for Multi-Step Processes
+
+```typescript
+// Good: Structured workflow
+workflows: [
+  {
+    name: 'procurement',
+    steps: [
+      { id: 'research', execute: async () => { /* ... */ } },
+      { id: 'purchase', execute: async () => { /* ... */ } },
+      { id: 'audit', execute: async () => { /* ... */ } },
+    ],
+  },
+]
+
+// Bad: Single-agent doing everything
+```
+
+### 2. Leverage Memory for Context
+
+```typescript
+agents: [
+  {
+    name: 'agent',
+    memory: { type: 'simple' },  // Enable memory
+    tools: sardisTools,
+  },
+]
+```
+
+### 3. Set Clear Instructions
+
+```typescript
+instructions: (
+  'You are a procurement agent. Workflow:\n' +
+  '1. Check balance\n' +
+  '2. Verify policy\n' +
+  '3. Execute payment\n' +
+  '4. Confirm TX'
+)
+```
+
+### 4. Use Environment Variables
+
+```typescript
+// .env
+SARDIS_API_KEY=sk_live_...
+SARDIS_WALLET_ID=wallet_...
+
+// code
+const tools = createSardisTools({
+  apiKey: process.env.SARDIS_API_KEY!,
+  walletId: process.env.SARDIS_WALLET_ID!,
+})
+```
+
+## Example: Production Agent
+
+```typescript
+import { Mastra } from '@mastra/core'
+import { createSardisTools } from '@sardis/ai-sdk'
+import { openai } from '@ai-sdk/openai'
+
+const mastra = new Mastra({
+  agents: [
+    {
+      name: 'production-buyer',
+      instructions: (
+        'You are a production procurement agent. ' +
+        'Always verify before purchasing. ' +
+        'Log all transactions.'
+      ),
+      model: openai('gpt-4o'),
+      tools: createSardisTools({
+        apiKey: process.env.SARDIS_API_KEY!,
+        walletId: process.env.SARDIS_WALLET_ID!,
+        maxPaymentAmount: 100,
+        allowedMerchants: ['openai.com', 'anthropic.com'],
+      }),
+      memory: {
+        type: 'simple',
+      },
+    },
+  ],
+})
+
+export async function purchaseAPICredits(
+  vendor: string,
+  amount: number,
+) {
+  const agent = mastra.getAgent('production-buyer')
+  
+  const result = await agent.generate(
+    `Purchase $${amount} of API credits from ${vendor}. ` +
+    `Check policy and balance first.`
+  )
+  
+  return result.text
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Vercel AI SDK" icon="triangle" href="/integrations/vercel-ai">
+    Direct Vercel AI SDK integration
+  </Card>
+  <Card title="TypeScript SDK" icon="code" href="/api-reference/typescript-sdk">
+    Full TypeScript SDK reference
+  </Card>
+  <Card title="Policy Engine" icon="shield" href="/core-concepts/policy-engine">
+    Understand spending policy rules
+  </Card>
+  <Card title="Workflows" icon="diagram-project" href="/guides/workflows">
+    Build complex procurement workflows
+  </Card>
+</CardGroup>

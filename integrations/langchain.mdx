@@ -1,0 +1,585 @@
+---
+title: 'LangChain'
+description: 'Add payment capabilities to LangChain agents with policy-enforced tools'
+icon: 'link'
+---
+
+## Overview
+
+The **sardis-langchain** package provides native LangChain tools for autonomous agent payments. Integrate Sardis wallets into any LangChain agent (ReAct, OpenAI Functions, Conversational, etc.) with a single toolkit.
+
+## When to Use LangChain
+
+- **Python Agent Development**: Build agents with LangChain's Python framework
+- **Multi-Tool Workflows**: Combine payments with LangChain's ecosystem (web search, databases, APIs)
+- **ReAct Agents**: Reasoning + Acting patterns for complex procurement tasks
+- **Custom Chains**: Build payment workflows with LCEL (LangChain Expression Language)
+
+## Installation
+
+```bash
+pip install sardis-langchain langchain langchain-openai
+```
+
+<Tip>
+  Requires Python 3.9+ and `langchain-core>=0.1.0`
+</Tip>
+
+## Quick Start
+
+<CodeGroup>
+
+```python Basic Setup
+from sardis import SardisClient
+from sardis_langchain import SardisToolkit
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain_openai import ChatOpenAI
+from langchain.prompts import PromptTemplate
+
+# Initialize Sardis
+client = SardisClient(api_key="sk_live_...")
+wallet = client.wallets.create(
+    name="procurement-agent",
+    chain="base",
+    currency="USDC",
+    limit_per_tx=100.00,
+    limit_total=500.00,
+)
+
+# Create LangChain tools
+toolkit = SardisToolkit(client=client, wallet_id=wallet.wallet_id)
+tools = toolkit.get_tools()
+
+# Create agent
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
+prompt = PromptTemplate.from_template(
+    """You are a procurement agent with a Sardis wallet.
+    
+    Answer the user's request using the following tools:
+    {tools}
+    
+    Question: {input}
+    {agent_scratchpad}"""
+)
+
+agent = create_react_agent(llm, tools, prompt)
+executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+# Execute
+result = executor.invoke({
+    "input": "Check my balance and pay $30 to Anthropic for API credits"
+})
+print(result["output"])
+```
+
+```python Full Example
+from decimal import Decimal
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain.prompts import PromptTemplate
+from langchain_core.tools import tool
+from langchain_openai import ChatOpenAI
+from sardis import SardisClient
+from sardis_langchain import SardisToolkit
+
+# Initialize Sardis
+sardis = SardisClient(api_key="sk_live_...")
+
+agent = sardis.agents.create(
+    name="langchain-agent",
+    description="LangChain procurement agent",
+)
+
+wallet = sardis.wallets.create(
+    agent_id=agent.agent_id,
+    chain="base_sepolia",
+    currency="USDC",
+    limit_per_tx=Decimal("200.00"),
+    limit_total=Decimal("1000.00"),
+)
+
+# Create toolkit
+toolkit = SardisToolkit(client=sardis, wallet_id=wallet.wallet_id)
+tools = toolkit.get_tools()
+
+# Agent prompt
+PROMPT = PromptTemplate.from_template("""
+You are a procurement agent with a Sardis wallet.
+You can make payments for software tools, API credits, and cloud services.
+
+Before making any payment:
+1. State what you're purchasing and why
+2. Check the wallet balance if needed
+3. Execute the payment with a clear purpose
+
+You have access to the following tools:
+{tools}
+
+Tool names: {tool_names}
+
+Use the following format:
+
+Question: the input question you must answer
+Thought: think about what to do
+Action: the action to take (one of [{tool_names}])
+Action Input: the input to the action
+Observation: the result of the action
+... (repeat Thought/Action/Observation as needed)
+Thought: I now know the final answer
+Final Answer: the final answer to the question
+
+Begin!
+
+Question: {input}
+Thought:{agent_scratchpad}
+""")
+
+# Create agent
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
+agent = create_react_agent(llm, tools, PROMPT)
+executor = AgentExecutor(
+    agent=agent,
+    tools=tools,
+    verbose=True,
+    handle_parsing_errors=True,
+)
+
+# Run agent
+result = executor.invoke({
+    "input": "I need to purchase $30 of Anthropic API credits and $15 of "
+             "GitHub Copilot for our development team. Check the balance first."
+})
+
+print(result["output"])
+```
+
+</CodeGroup>
+
+## Available Tools
+
+The `SardisToolkit` provides 5 LangChain tools:
+
+<CardGroup cols={2}>
+  <Card title="sardis_pay" icon="dollar-sign">
+    Execute policy-enforced payment
+  </Card>
+  <Card title="sardis_check_balance" icon="wallet">
+    Check balance and spending limits
+  </Card>
+  <Card title="sardis_check_policy" icon="shield-check">
+    Dry-run policy validation
+  </Card>
+  <Card title="sardis_set_policy" icon="sliders">
+    Update spending policy from natural language
+  </Card>
+  <Card title="sardis_list_transactions" icon="list">
+    View transaction history
+  </Card>
+</CardGroup>
+
+## Tool Details
+
+### sardis_pay
+
+Execute a payment with automatic policy enforcement:
+
+```python
+@tool
+def sardis_pay(to: str, amount: str, token: str, purpose: str) -> str:
+    """Execute a payment through Sardis with policy enforcement.
+    
+    Args:
+        to: Recipient address or merchant identifier (e.g. 'openai.com')
+        amount: Amount in USD (e.g. '25.00')
+        token: Stablecoin to use - one of USDC, USDT, EURC
+        purpose: Reason for the payment
+    """
+```
+
+Example:
+
+```python
+result = sardis_pay(
+    to="openai.com",
+    amount="25.00",
+    token="USDC",
+    purpose="API credits for GPT-4o"
+)
+# Returns: "Status: completed | Amount: 25.00 USDC | TX: 0x7f3b...a2c9 | Chain: base"
+```
+
+### sardis_check_balance
+
+Check wallet balance and remaining limits:
+
+```python
+@tool
+def sardis_balance() -> str:
+    """Check the current wallet balance and spending limits."""
+```
+
+Returns:
+
+```text
+Wallet: wallet_abc123 | Chain: base | Balance: 1000.00 USDC
+```
+
+### sardis_check_policy
+
+Validate a payment before execution:
+
+```python
+from sardis_langchain import SardisCheckPolicyTool
+
+policy_tool = SardisCheckPolicyTool(client=client, wallet_id=wallet.wallet_id)
+result = policy_tool._run(
+    amount="500.00",
+    to="aws.amazon.com",
+    token="USDC",
+    purpose="EC2 hosting"
+)
+```
+
+### sardis_set_policy
+
+Update spending policy using natural language:
+
+```python
+result = executor.invoke({
+    "input": "Set my spending policy to: Max $100 per transaction, daily limit $500"
+})
+```
+
+### sardis_list_transactions
+
+View recent transaction history:
+
+```python
+result = executor.invoke({
+    "input": "Show me my last 10 transactions"
+})
+```
+
+## Toolkit Options
+
+### Full Toolkit (All 5 Tools)
+
+```python
+toolkit = SardisToolkit(client=client, wallet_id=wallet.wallet_id)
+tools = toolkit.get_tools()
+```
+
+### Payment-Only Tools (3 Tools)
+
+For agents that should only execute payments:
+
+```python
+tools = toolkit.get_payment_tools()  # pay + balance + policy check
+```
+
+### Individual Tools
+
+Import and use specific tools:
+
+```python
+from sardis_langchain import (
+    SardisPayTool,
+    SardisCheckBalanceTool,
+    SardisCheckPolicyTool,
+)
+
+tools = [
+    SardisPayTool(client=client, wallet_id=wallet.wallet_id),
+    SardisCheckBalanceTool(client=client, wallet_id=wallet.wallet_id),
+]
+```
+
+## Agent Types
+
+### ReAct Agent
+
+Reasoning + Acting pattern for complex tasks:
+
+```python
+from langchain.agents import create_react_agent, AgentExecutor
+
+agent = create_react_agent(llm, tools, prompt)
+executor = AgentExecutor(agent=agent, tools=tools)
+```
+
+### OpenAI Functions Agent
+
+Use OpenAI's function calling:
+
+```python
+from langchain.agents import create_openai_functions_agent
+
+agent = create_openai_functions_agent(llm, tools, prompt)
+executor = AgentExecutor(agent=agent, tools=tools)
+```
+
+### Conversational Agent
+
+Chat-based agent with memory:
+
+```python
+from langchain.agents import create_conversational_retrieval_agent
+from langchain.memory import ConversationBufferMemory
+
+memory = ConversationBufferMemory(memory_key="chat_history")
+agent = create_conversational_retrieval_agent(
+    llm=llm,
+    tools=tools,
+    memory=memory,
+)
+```
+
+### Structured Chat Agent
+
+For complex multi-turn conversations:
+
+```python
+from langchain.agents import create_structured_chat_agent
+
+agent = create_structured_chat_agent(llm, tools, prompt)
+executor = AgentExecutor(agent=agent, tools=tools)
+```
+
+## Callback Handler
+
+Track Sardis operations with the built-in callback handler:
+
+```python
+from sardis_langchain import SardisCallbackHandler
+
+handler = SardisCallbackHandler()
+executor = AgentExecutor(
+    agent=agent,
+    tools=tools,
+    callbacks=[handler],
+    verbose=True,
+)
+
+result = executor.invoke({"input": "Pay $25 to OpenAI"})
+
+# Inspect audit trail
+for record in handler.get_payment_records():
+    print(f"Payment: ${record.amount} to {record.recipient}")
+    print(f"Status: {record.status}")
+    print(f"TX Hash: {record.tx_hash}")
+```
+
+## LCEL Chains
+
+Use Sardis tools in LangChain Expression Language chains:
+
+```python
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
+
+# Create a payment chain
+payment_chain = (
+    {"input": RunnablePassthrough()}
+    | prompt
+    | llm
+    | StrOutputParser()
+)
+
+result = payment_chain.invoke("Pay $50 to AWS for hosting")
+```
+
+## Policy Enforcement
+
+Every payment is validated against the wallet's policy:
+
+```python
+wallet = client.wallets.create(
+    name="agent",
+    chain="base",
+    policy="Max $100 per transaction, daily limit $500, allowed vendors: openai.com anthropic.com",
+)
+
+toolkit = SardisToolkit(client=client, wallet_id=wallet.wallet_id)
+
+# This payment will be blocked (exceeds per-tx limit)
+result = executor.invoke({
+    "input": "Pay $150 to OpenAI"
+})
+# Output: "Payment rejected: Amount $150.00 exceeds per-transaction limit of $100.00"
+
+# This payment will be blocked (vendor not allowed)
+result = executor.invoke({
+    "input": "Pay $50 to random-vendor.com"
+})
+# Output: "Payment rejected: Vendor random-vendor.com is not in the allowed list"
+```
+
+## Simulation Mode
+
+Test agents without real funds:
+
+```python
+# No API key needed for simulation
+client = SardisClient()  # Defaults to simulation mode
+wallet = client.wallets.create(name="test-agent", chain="base")
+
+toolkit = SardisToolkit(client=client, wallet_id=wallet.wallet_id)
+tools = toolkit.get_tools()
+
+# All operations execute locally - no API calls, no real money
+```
+
+## Example: Multi-Vendor Procurement
+
+```python examples/langchain_sardis_agent.py
+#!/usr/bin/env python3
+from decimal import Decimal
+from langchain.agents import AgentExecutor, create_react_agent
+from langchain.prompts import PromptTemplate
+from langchain_openai import ChatOpenAI
+from sardis import SardisClient
+from sardis_langchain import SardisToolkit
+
+# Initialize Sardis
+sardis = SardisClient(api_key="sk_live_...")
+agent = sardis.agents.create(name="langchain-agent")
+wallet = sardis.wallets.create(
+    agent_id=agent.agent_id,
+    chain="base",
+    currency="USDC",
+    limit_per_tx=Decimal("200.00"),
+    limit_total=Decimal("1000.00"),
+)
+
+# Create toolkit
+toolkit = SardisToolkit(client=sardis, wallet_id=wallet.wallet_id)
+tools = toolkit.get_tools()
+
+# Agent prompt
+PROMPT = PromptTemplate.from_template("""
+You are a procurement agent with a Sardis wallet.
+
+Before making any payment:
+1. State what you're purchasing and why
+2. Check the wallet balance
+3. Execute the payment with a clear purpose
+
+Tools: {tools}
+Tool names: {tool_names}
+
+Question: {input}
+Thought:{agent_scratchpad}
+""")
+
+# Create and run agent
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
+agent = create_react_agent(llm, tools, PROMPT)
+executor = AgentExecutor(agent=agent, tools=tools, verbose=True)
+
+result = executor.invoke({
+    "input": "Purchase $30 of Anthropic API credits and $15 of GitHub Copilot. Check balance first."
+})
+
+print(result["output"])
+```
+
+## Best Practices
+
+### 1. Always Check Balance First
+
+```python
+PROMPT = """
+Before making any payment:
+1. Check wallet balance using sardis_check_balance
+2. Verify the payment is within limits
+3. Execute the payment
+"""
+```
+
+### 2. Use Policy Checks for Large Amounts
+
+```python
+PROMPT = """
+For payments over $100:
+1. First use sardis_check_policy to verify
+2. Then execute with sardis_pay
+"""
+```
+
+### 3. Provide Clear Purpose
+
+```python
+# Good
+sardis_pay(to="openai.com", amount="25.00", purpose="GPT-4o API credits for Q1 research")
+
+# Bad
+sardis_pay(to="openai.com", amount="25.00", purpose="API")
+```
+
+### 4. Handle Policy Rejections
+
+```python
+PROMPT = """
+If a payment is rejected:
+1. Explain why to the user
+2. Suggest alternatives (lower amount, different vendor)
+3. Request human approval if needed
+"""
+```
+
+## Troubleshooting
+
+### Tool Not Found
+
+```python
+ValueError: Tool sardis_pay not found
+```
+
+Ensure toolkit is initialized:
+
+```python
+toolkit = SardisToolkit(client=client, wallet_id=wallet.wallet_id)
+tools = toolkit.get_tools()  # Don't forget to call get_tools()
+```
+
+### API Key Error
+
+```python
+AuthenticationError: Invalid API key
+```
+
+Verify your API key:
+
+```python
+client = SardisClient(api_key="sk_live_...")  # Must start with sk_live_ or sk_test_
+```
+
+### Policy Rejection
+
+```python
+Payment rejected: Amount exceeds daily limit
+```
+
+Check wallet limits:
+
+```python
+wallet = client.wallets.get(wallet.wallet_id)
+print(f"Daily limit: ${wallet.limit_daily}")
+print(f"Spent today: ${wallet.spent_today}")
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="OpenAI Integration" icon="robot" href="/integrations/openai">
+    Use Sardis with OpenAI function calling
+  </Card>
+  <Card title="CrewAI Teams" icon="users" href="/integrations/crewai">
+    Build multi-agent procurement teams
+  </Card>
+  <Card title="Policy Engine" icon="shield" href="/core-concepts/policy-engine">
+    Deep dive into spending policy rules
+  </Card>
+  <Card title="API Reference" icon="book" href="/api-reference/python-sdk">
+    Full Python SDK documentation
+  </Card>
+</CardGroup>

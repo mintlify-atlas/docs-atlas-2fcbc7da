@@ -1,0 +1,60 @@
+---
+title: 'Compliance'
+description: 'KYC and AML screening endpoints'
+---
+
+## Overview
+
+All transactions undergo KYC (Know Your Customer) and AML (Anti-Money Laundering) screening via Persona and Elliptic.
+
+## Get KYC Status
+
+```bash cURL
+curl https://api.sardis.sh/api/v2/compliance/kyc/org_abc123 \
+  -H "Authorization: Bearer sk_live_your_api_key"
+```
+
+### Response
+
+```json
+{
+  "organization_id": "org_abc123",
+  "kyc_status": "approved",
+  "verification_id": "persona_verif_xyz",
+  "verified_at": "2025-03-01T10:00:00Z",
+  "risk_level": "low"
+}
+```
+
+## Screen Address
+
+Check if an address is sanctioned:
+
+```bash cURL
+curl -X POST https://api.sardis.sh/api/v2/compliance/screen \
+  -H "Authorization: Bearer sk_live_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "address": "0x1234567890abcdef...",
+    "chain": "ethereum"
+  }'
+```
+
+### Response
+
+```json
+{
+  "address": "0x1234567890abcdef...",
+  "is_sanctioned": false,
+  "risk_score": 0.05,
+  "screening_provider": "elliptic",
+  "screened_at": "2025-03-03T10:00:00Z"
+}
+```
+
+## Compliance States
+
+Transactions can be:
+- **approved**: Passed all checks
+- **flagged**: Requires manual review
+- **blocked**: Failed sanctions screening

@@ -1,0 +1,795 @@
+---
+title: TypeScript SDK Reference
+description: Complete API reference for the Sardis TypeScript SDK
+---
+
+# TypeScript SDK Reference
+
+Complete API reference for `@sardis/sdk` TypeScript/JavaScript package.
+
+## Installation
+
+```bash
+npm install @sardis/sdk
+```
+
+## Client Class
+
+### `SardisClient`
+
+```typescript
+import { SardisClient } from '@sardis/sdk';
+
+const client = new SardisClient({
+  apiKey: string;
+  baseUrl?: string;
+  timeout?: number;
+  connectTimeout?: number;
+  maxRetries?: number;
+  retryDelay?: number;
+  maxRetryDelay?: number;
+  retryOn?: number[];
+  retryOnNetworkError?: boolean;
+  tokenRefresh?: TokenRefreshConfig;
+});
+```
+
+**Options:**
+- `apiKey` (string, required): Your Sardis API key
+- `baseUrl` (string, optional): API base URL (default: `https://api.sardis.sh`)
+- `timeout` (number, optional): Request timeout in ms (default: 30000)
+- `connectTimeout` (number, optional): Connection timeout in ms (default: 10000)
+- `maxRetries` (number, optional): Max retry attempts (default: 3)
+- `retryDelay` (number, optional): Initial retry delay in ms (default: 1000)
+- `maxRetryDelay` (number, optional): Max retry delay in ms (default: 30000)
+- `retryOn` (number[], optional): HTTP status codes to retry (default: [408, 429, 500, 502, 503, 504])
+- `retryOnNetworkError` (boolean, optional): Retry on network errors (default: true)
+- `tokenRefresh` (TokenRefreshConfig, optional): Token refresh configuration
+
+**Methods:**
+- `setApiKey(apiKey: string): void` - Update API key
+- `getApiKey(): string` - Get current API key
+- `addRequestInterceptor(interceptor: RequestInterceptor): () => void` - Add request interceptor
+- `addResponseInterceptor(interceptor: ResponseInterceptor): () => void` - Add response interceptor
+- `async request<T>(method: string, path: string, options?: RequestOptions): Promise<T>` - Make HTTP request
+- `async *paginate<T>(fetchPage, options?): AsyncIterableIterator<T>` - Paginate through results
+- `async paginateAll<T>(fetchPage, options?): Promise<T[]>` - Fetch all pages
+- `async batch<T>(operations, options?): Promise<Array<{success: true; data: T} | {success: false; error: Error}>>` - Batch operations
+- `async health(options?: RequestOptions): Promise<{status: string; version?: string}>` - Check API health
+
+## Resource Classes
+
+### Agents Resource
+
+#### `client.agents.create()`
+
+```typescript
+const agent = await client.agents.create({
+  name: string;
+  description?: string;
+  spending_limits?: SpendingLimits;
+  policy?: AgentPolicy;
+  metadata?: Record<string, unknown>;
+}, options?: RequestOptions);
+```
+
+**Returns:** `Promise<Agent>`
+
+#### `client.agents.get()`
+
+```typescript
+const agent = await client.agents.get(
+  agentId: string,
+  options?: RequestOptions
+);
+```
+
+**Returns:** `Promise<Agent>`
+
+#### `client.agents.list()`
+
+```typescript
+const agents = await client.agents.list({
+  limit?: number;
+  offset?: number;
+}, options?: RequestOptions);
+```
+
+**Returns:** `Promise<Agent[]>`
+
+#### `client.agents.update()`
+
+```typescript
+const agent = await client.agents.update(agentId: string, {
+  name?: string;
+  description?: string;
+  spending_limits?: SpendingLimits;
+  policy?: AgentPolicy;
+  metadata?: Record<string, unknown>;
+}, options?: RequestOptions);
+```
+
+**Returns:** `Promise<Agent>`
+
+### Wallets Resource
+
+#### `client.wallets.create()`
+
+```typescript
+const wallet = await client.wallets.create({
+  agent_id: string;
+  mpc_provider?: MPCProvider;
+  chain?: Chain;
+  currency?: Token;
+  limit_per_tx?: string;
+  limit_total?: string;
+  metadata?: Record<string, unknown>;
+}, options?: RequestOptions);
+```
+
+**Returns:** `Promise<Wallet>`
+
+#### `client.wallets.get()`
+
+```typescript
+const wallet = await client.wallets.get(
+  walletId: string,
+  options?: RequestOptions
+);
+```
+
+**Returns:** `Promise<Wallet>`
+
+#### `client.wallets.list()`
+
+```typescript
+const wallets = await client.wallets.list({
+  agent_id?: string;
+  limit?: number;
+  offset?: number;
+}, options?: RequestOptions);
+```
+
+**Returns:** `Promise<Wallet[]>`
+
+#### `client.wallets.getBalance()`
+
+```typescript
+const balance = await client.wallets.getBalance(walletId: string, {
+  chain?: Chain;
+  token?: Token;
+}, options?: RequestOptions);
+```
+
+**Returns:** `Promise<WalletBalance>`
+
+#### `client.wallets.transfer()`
+
+```typescript
+const tx = await client.wallets.transfer(walletId: string, {
+  destination: string;
+  amount: string;
+  token?: Token;
+  chain?: Chain;
+  memo?: string;
+}, options?: RequestOptions);
+```
+
+**Returns:** `Promise<WalletTransferResponse>`
+
+### Payments Resource
+
+#### `client.payments.executeMandate()`
+
+```typescript
+const result = await client.payments.executeMandate({
+  wallet_id: string;
+  mandate: {
+    intent: {
+      amount: string;
+      currency: Token;
+      recipient: string;
+      purpose?: string;
+    };
+  };
+}, options?: RequestOptions);
+```
+
+**Returns:** `Promise<ExecutePaymentResponse>`
+
+#### `client.payments.executeAP2()`
+
+```typescript
+const result = await client.payments.executeAP2({
+  wallet_id: string;
+  bundle: {
+    intent: { /* ... */ };
+    cart: { /* ... */ };
+    payment: { /* ... */ };
+  };
+}, options?: RequestOptions);
+```
+
+**Returns:** `Promise<ExecuteAP2Response>`
+
+#### `client.payments.get()`
+
+```typescript
+const payment = await client.payments.get(
+  paymentId: string,
+  options?: RequestOptions
+);
+```
+
+**Returns:** `Promise<Payment>`
+
+#### `client.payments.list()`
+
+```typescript
+const payments = await client.payments.list({
+  wallet_id?: string;
+  status?: PaymentStatus;
+  limit?: number;
+  offset?: number;
+}, options?: RequestOptions);
+```
+
+**Returns:** `Promise<Payment[]>`
+
+### Holds Resource
+
+#### `client.holds.create()`
+
+```typescript
+const hold = await client.holds.create({
+  wallet_id: string;
+  amount: string;
+  token?: Token;
+  expires_in?: number;
+  metadata?: Record<string, unknown>;
+}, options?: RequestOptions);
+```
+
+**Returns:** `Promise<Hold>`
+
+#### `client.holds.capture()`
+
+```typescript
+const capture = await client.holds.capture(holdId: string, {
+  amount?: string;
+  memo?: string;
+}, options?: RequestOptions);
+```
+
+**Returns:** `Promise<CreateHoldResponse>`
+
+#### `client.holds.void()`
+
+```typescript
+await client.holds.void(
+  holdId: string,
+  options?: RequestOptions
+);
+```
+
+**Returns:** `Promise<void>`
+
+#### `client.holds.get()`
+
+```typescript
+const hold = await client.holds.get(
+  holdId: string,
+  options?: RequestOptions
+);
+```
+
+**Returns:** `Promise<Hold>`
+
+#### `client.holds.list()`
+
+```typescript
+const holds = await client.holds.list({
+  wallet_id?: string;
+  status?: HoldStatus;
+  limit?: number;
+  offset?: number;
+}, options?: RequestOptions);
+```
+
+**Returns:** `Promise<Hold[]>`
+
+### Groups Resource
+
+#### `client.groups.create()`
+
+```typescript
+const group = await client.groups.create({
+  name: string;
+  budget: {
+    per_transaction: string;
+    daily: string;
+    monthly: string;
+  };
+  merchant_policy?: {
+    blocked_categories?: string[];
+  };
+  metadata?: Record<string, unknown>;
+}, options?: RequestOptions);
+```
+
+**Returns:** `Promise<Group>`
+
+#### `client.groups.get()`
+
+```typescript
+const group = await client.groups.get(
+  groupId: string,
+  options?: RequestOptions
+);
+```
+
+**Returns:** `Promise<Group>`
+
+#### `client.groups.addAgent()`
+
+```typescript
+await client.groups.addAgent(
+  groupId: string,
+  agentId: string,
+  options?: RequestOptions
+);
+```
+
+**Returns:** `Promise<void>`
+
+#### `client.groups.removeAgent()`
+
+```typescript
+await client.groups.removeAgent(
+  groupId: string,
+  agentId: string,
+  options?: RequestOptions
+);
+```
+
+**Returns:** `Promise<void>`
+
+#### `client.groups.getSpending()`
+
+```typescript
+const spending = await client.groups.getSpending(
+  groupId: string,
+  options?: RequestOptions
+);
+```
+
+**Returns:** `Promise<GroupSpending>`
+
+### Policies Resource
+
+#### `client.policies.parseNL()`
+
+```typescript
+const parsed = await client.policies.parseNL(
+  policyText: string,
+  options?: RequestOptions
+);
+```
+
+**Returns:** `Promise<ParsedPolicy>`
+
+#### `client.policies.check()`
+
+```typescript
+const check = await client.policies.check({
+  wallet_id: string;
+  amount: string;
+  recipient: string;
+}, options?: RequestOptions);
+```
+
+**Returns:** `Promise<PolicyCheckResponse>`
+
+#### `client.policies.preview()`
+
+```typescript
+const preview = await client.policies.preview({
+  policy: Record<string, unknown>;
+}, options?: RequestOptions);
+```
+
+**Returns:** `Promise<PolicyPreviewResponse>`
+
+### Cards Resource
+
+#### `client.cards.create()`
+
+```typescript
+const card = await client.cards.create({
+  wallet_id: string;
+  card_type?: 'virtual' | 'physical';
+  spending_limits?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}, options?: RequestOptions);
+```
+
+**Returns:** `Promise<Card>`
+
+#### `client.cards.get()`
+
+```typescript
+const card = await client.cards.get(
+  cardId: string,
+  options?: RequestOptions
+);
+```
+
+**Returns:** `Promise<Card>`
+
+#### `client.cards.list()`
+
+```typescript
+const cards = await client.cards.list({
+  wallet_id?: string;
+  limit?: number;
+  offset?: number;
+}, options?: RequestOptions);
+```
+
+**Returns:** `Promise<Card[]>`
+
+### Treasury Resource
+
+#### `client.treasury.getAccount()`
+
+```typescript
+const account = await client.treasury.getAccount(
+  accountId: string,
+  options?: RequestOptions
+);
+```
+
+**Returns:** `Promise<FinancialAccount>`
+
+#### `client.treasury.getBalance()`
+
+```typescript
+const balance = await client.treasury.getBalance(
+  accountId: string,
+  options?: RequestOptions
+);
+```
+
+**Returns:** `Promise<TreasuryBalance>`
+
+#### `client.treasury.createPayment()`
+
+```typescript
+const payment = await client.treasury.createPayment({
+  account_id: string;
+  amount: string;
+  destination: string;
+  method?: 'ach' | 'wire';
+}, options?: RequestOptions);
+```
+
+**Returns:** `Promise<TreasuryPaymentResponse>`
+
+### Webhooks Resource
+
+#### `client.webhooks.create()`
+
+```typescript
+const webhook = await client.webhooks.create({
+  url: string;
+  events: WebhookEventType[];
+  secret?: string;
+  metadata?: Record<string, unknown>;
+}, options?: RequestOptions);
+```
+
+**Returns:** `Promise<Webhook>`
+
+#### `client.webhooks.get()`
+
+```typescript
+const webhook = await client.webhooks.get(
+  webhookId: string,
+  options?: RequestOptions
+);
+```
+
+**Returns:** `Promise<Webhook>`
+
+#### `client.webhooks.list()`
+
+```typescript
+const webhooks = await client.webhooks.list({
+  limit?: number;
+  offset?: number;
+}, options?: RequestOptions);
+```
+
+**Returns:** `Promise<Webhook[]>`
+
+### Ledger Resource
+
+#### `client.ledger.list()`
+
+```typescript
+const entries = await client.ledger.list({
+  wallet_id?: string;
+  group_id?: string;
+  limit?: number;
+  offset?: number;
+}, options?: RequestOptions);
+```
+
+**Returns:** `Promise<LedgerEntry[]>`
+
+## Type Definitions
+
+### `Agent`
+
+```typescript
+interface Agent {
+  agent_id: string;
+  name: string;
+  description?: string;
+  spending_limits?: SpendingLimits;
+  policy?: AgentPolicy;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  metadata?: Record<string, unknown>;
+}
+```
+
+### `Wallet`
+
+```typescript
+interface Wallet {
+  wallet_id: string;
+  agent_id: string;
+  mpc_provider: MPCProvider;
+  account_type: string;
+  addresses: Record<string, string>;
+  currency: Token;
+  limit_per_tx: string;
+  limit_total: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+```
+
+### `WalletBalance`
+
+```typescript
+interface WalletBalance {
+  wallet_id: string;
+  chain: Chain;
+  token: Token;
+  balance: string;
+  address: string;
+}
+```
+
+### `Payment`
+
+```typescript
+interface Payment {
+  payment_id: string;
+  wallet_id: string;
+  amount: string;
+  token: Token;
+  status: PaymentStatus;
+  tx_hash?: string;
+  created_at: string;
+  updated_at: string;
+}
+```
+
+### `Hold`
+
+```typescript
+interface Hold {
+  hold_id: string;
+  wallet_id: string;
+  amount: string;
+  token: Token;
+  status: HoldStatus;
+  expires_at?: string;
+  captured_amount?: string;
+  created_at: string;
+  updated_at: string;
+}
+```
+
+### `Card`
+
+```typescript
+interface Card {
+  card_id: string;
+  wallet_id: string;
+  card_type: 'virtual' | 'physical';
+  last_four: string;
+  status: CardStatus;
+  spending_limits?: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+```
+
+## Enums
+
+### `Chain`
+
+```typescript
+type Chain = 
+  | 'base'
+  | 'ethereum'
+  | 'polygon'
+  | 'arbitrum'
+  | 'optimism'
+  | 'base_sepolia';
+```
+
+### `Token`
+
+```typescript
+type Token = 'USDC' | 'USDT' | 'EURC' | 'PYUSD';
+```
+
+### `MPCProvider`
+
+```typescript
+type MPCProvider = 'turnkey' | 'fireblocks' | 'local';
+```
+
+### `PaymentStatus`
+
+```typescript
+type PaymentStatus = 
+  | 'pending'
+  | 'processing'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+```
+
+### `HoldStatus`
+
+```typescript
+type HoldStatus = 'active' | 'captured' | 'voided' | 'expired';
+```
+
+### `CardStatus`
+
+```typescript
+type CardStatus = 'active' | 'frozen' | 'cancelled';
+```
+
+### `WebhookEventType`
+
+```typescript
+type WebhookEventType =
+  | 'payment.created'
+  | 'payment.completed'
+  | 'payment.failed'
+  | 'hold.created'
+  | 'hold.captured'
+  | 'hold.voided'
+  | 'wallet.created'
+  | 'wallet.updated';
+```
+
+## Interceptors
+
+### Request Interceptor
+
+```typescript
+interface RequestInterceptor {
+  onRequest?: (config: AxiosRequestConfig) => AxiosRequestConfig | Promise<AxiosRequestConfig>;
+  onError?: (error: Error) => void | Promise<void>;
+}
+
+const removeInterceptor = client.addRequestInterceptor({
+  onRequest: (config) => {
+    console.log(`${config.method} ${config.url}`);
+    return config;
+  },
+});
+
+// Remove when done
+removeInterceptor();
+```
+
+### Response Interceptor
+
+```typescript
+interface ResponseInterceptor {
+  onResponse?: (response: AxiosResponse) => AxiosResponse | Promise<AxiosResponse>;
+  onError?: (error: Error) => void | Promise<void>;
+}
+
+client.addResponseInterceptor({
+  onResponse: (response) => {
+    console.log(`Response: ${response.status}`);
+    return response;
+  },
+});
+```
+
+## Request Options
+
+```typescript
+interface RequestOptions {
+  params?: Record<string, unknown>;
+  data?: unknown;
+  signal?: AbortSignal;
+  timeout?: number;
+}
+```
+
+## Pagination
+
+### Async Iterator
+
+```typescript
+for await (const agent of client.paginate(
+  (params) => client.agents.list(params),
+  { limit: 100 }
+)) {
+  console.log(agent.name);
+}
+```
+
+### Collect All
+
+```typescript
+const allAgents = await client.paginateAll(
+  (params) => client.agents.list(params)
+);
+```
+
+## Framework Integrations
+
+### Vercel AI SDK
+
+```typescript
+import { sardisTools } from '@sardis/sdk/integrations';
+import { generateText } from 'ai';
+
+const result = await generateText({
+  model: openai('gpt-4'),
+  tools: sardisTools({
+    apiKey: process.env.SARDIS_API_KEY!,
+    walletId: 'wallet_123',
+  }),
+  prompt: 'Pay $50 to OpenAI',
+});
+```
+
+### LangChain
+
+```typescript
+import { SardisToolkit } from '@sardis/sdk/integrations';
+
+const toolkit = new SardisToolkit({
+  apiKey: process.env.SARDIS_API_KEY!,
+  walletId: 'wallet_123',
+});
+
+const tools = toolkit.getTools();
+```
+
+## Error Classes
+
+See [Error Handling](/sdks/error-handling) for complete error reference.
+
+## See Also
+
+- [TypeScript SDK Guide](/sdks/typescript)
+- [Error Handling](/sdks/error-handling)
+- [Async Patterns](/sdks/async-patterns)

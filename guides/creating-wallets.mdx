@@ -1,0 +1,301 @@
+---
+title: Creating Wallets
+description: Create and fund non-custodial wallets for AI agents
+---
+
+Sardis wallets are non-custodial MPC (Multi-Party Computation) wallets that give AI agents the ability to make payments while keeping private keys secure. Each wallet is controlled by spending policies that define what the agent can and cannot do.
+
+## Creating Your First Wallet
+
+<Steps>
+  <Step title="Install Sardis">
+    Install the Sardis SDK in your Python project:
+    
+    ```bash
+    pip install sardis
+    ```
+  </Step>
+
+  <Step title="Initialize the Client">
+    Create a Sardis client with your API key:
+    
+    ```python
+    from sardis import SardisClient
+    
+    client = SardisClient(api_key="sk_...")
+    ```
+    
+    <Note>
+      Get your API key from the [Sardis Dashboard](https://dashboard.sardis.sh). For local testing, you can omit the API key to use simulation mode.
+    </Note>
+  </Step>
+
+  <Step title="Create a Wallet">
+    Create a wallet for your agent with a natural language spending policy:
+    
+    ```python
+    wallet = client.wallets.create(
+        name="shopping-assistant",
+        chain="base",
+        policy="Max $500 per transaction, $2000 per day"
+    )
+    
+    print(f"Wallet ID: {wallet.wallet_id}")
+    print(f"Address: {wallet.address}")
+    ```
+    
+    The wallet is created with:
+    - A unique wallet ID
+    - An on-chain address on the specified chain
+    - MPC key management via Turnkey
+    - Your spending policy automatically enforced
+  </Step>
+
+  <Step title="Fund the Wallet">
+    You can fund wallets using multiple methods (see below).
+    
+    ```python
+    # Check balance
+    balance = wallet.get_balance(token="USDC")
+    print(f"Balance: ${balance} USDC")
+    ```
+  </Step>
+</Steps>
+
+## Funding Options
+
+### Option 1: Crypto Transfer
+
+Transfer USDC or other supported tokens directly to the wallet address:
+
+```python
+# Get the wallet address
+address = wallet.address
+print(f"Send USDC to: {address}")
+
+# Wait for confirmation
+import asyncio
+await wallet.wait_for_balance(min_amount=100, token="USDC", timeout=300)
+```
+
+**Supported tokens by chain:**
+
+| Chain | Tokens |
+|-------|--------|
+| Base | USDC, EURC |
+| Polygon | USDC, USDT, EURC |
+| Ethereum | USDC, USDT, PYUSD, EURC |
+| Arbitrum | USDC, USDT |
+| Optimism | USDC, USDT |
+
+### Option 2: Card Funding
+
+Fund wallets with a credit or debit card via Circle:
+
+```python
+funding = client.funding.create_card_session(
+    wallet_id=wallet.wallet_id,
+    amount=100.00,
+    currency="USD",
+    return_url="https://yourapp.com/funding-complete"
+)
+
+# Redirect user to funding URL
+print(f"Complete funding at: {funding.url}")
+
+# Listen for webhook
+@app.route("/webhooks/sardis", methods=["POST"])
+def handle_webhook():
+    event = request.json
+    if event["type"] == "funding.completed":
+        print(f"Wallet {event['data']['wallet_id']} funded!")
+    return {"status": "ok"}
+```
+
+### Option 3: Bank Transfer (ACH)
+
+For larger amounts, use bank transfers:
+
+```python
+bank_funding = client.funding.create_bank_transfer(
+    wallet_id=wallet.wallet_id,
+    amount=5000.00,
+    currency="USD",
+    account_type="checking"
+)
+
+print(f"Wire instructions: {bank_funding.instructions}")
+print(f"Reference: {bank_funding.reference_number}")
+```
+
+ACH transfers typically settle in 3-5 business days. Wire transfers are same-day.
+
+## Multi-Chain Wallet Setup
+
+Create wallets across multiple chains for an agent:
+
+```python
+# Create wallets on different chains
+base_wallet = client.wallets.create(
+    name="agent-base",
+    chain="base",
+    policy="Max $100/tx"
+)
+
+polygon_wallet = client.wallets.create(
+    name="agent-polygon",
+    chain="polygon",
+    policy="Max $100/tx"
+)
+
+# Group them together
+agent_group = client.groups.create(
+    name="my-agent",
+    wallet_ids=[base_wallet.wallet_id, polygon_wallet.wallet_id],
+    policy="Aggregate max $500/day across all chains"
+)
+
+print(f"Multi-chain agent ID: {agent_group.group_id}")
+```
+
+## Advanced: Simulation Mode
+
+For testing without real funds:
+
+```python
+from sardis import Wallet, Transaction
+
+# Create a simulated wallet (no API key needed)
+wallet = Wallet(initial_balance=1000, currency="USDC")
+print(f"Simulated wallet ID: {wallet.wallet_id}")
+print(f"Balance: ${wallet.balance}")
+
+# Execute simulated transaction
+tx = Transaction(
+    from_wallet=wallet,
+    to="merchant-001",
+    amount=25,
+    purpose="Test payment"
+)
+
+result = tx.execute()
+print(f"Status: {result.status}")
+print(f"New balance: ${wallet.balance}")
+```
+
+Simulation mode is perfect for:
+- Unit testing payment logic
+- Prototyping agent flows
+- Development without real funds
+
+## Wallet Management
+
+### Check Wallet Status
+
+```python
+# Get wallet details
+wallet_info = client.wallets.get(wallet_id="wallet_abc123")
+print(f"Status: {wallet_info.status}")
+print(f"Created: {wallet_info.created_at}")
+print(f"Spent today: ${wallet_info.spent_today}")
+```
+
+### List All Wallets
+
+```python
+wallets = client.wallets.list(agent_id="agent_xyz")
+for w in wallets:
+    print(f"{w.name}: ${w.balance} USDC")
+```
+
+### Freeze/Unfreeze Wallet
+
+```python
+# Freeze wallet (block all spending)
+client.wallets.freeze(wallet_id=wallet.wallet_id)
+
+# Unfreeze wallet
+client.wallets.unfreeze(wallet_id=wallet.wallet_id)
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Wallet creation fails with 'Invalid chain'">
+    Make sure you're using a supported chain name: `base`, `polygon`, `ethereum`, `arbitrum`, or `optimism`.
+    
+    Chain names are case-insensitive but must match exactly.
+  </Accordion>
+
+  <Accordion title="Balance shows 0 after funding">
+    Blockchain confirmations can take 30-60 seconds. Try:
+    
+    ```python
+    import time
+    for i in range(10):
+        balance = wallet.get_balance(token="USDC")
+        if balance > 0:
+            print(f"Funded: ${balance}")
+            break
+        time.sleep(6)
+    ```
+    
+    Also verify you sent funds to the correct address and chain.
+  </Accordion>
+
+  <Accordion title="'MPC provider error' when creating wallet">
+    This usually indicates a Turnkey API configuration issue. Check:
+    
+    1. Your `TURNKEY_API_KEY` environment variable is set
+    2. Your `TURNKEY_ORGANIZATION_ID` is correct
+    3. The Turnkey organization has wallet creation enabled
+    
+    Contact support if the issue persists.
+  </Accordion>
+
+  <Accordion title="Can I recover a wallet if I lose access?">
+    Sardis wallets support social recovery. Enable it when creating the wallet:
+    
+    ```python
+    wallet = client.wallets.create(
+        name="my-wallet",
+        chain="base",
+        policy="Max $100/tx",
+        recovery={
+            "enabled": True,
+            "guardians": ["guardian1@example.com", "guardian2@example.com"],
+            "threshold": 2
+        }
+    )
+    ```
+    
+    If you lose access, 2 of your guardians can approve recovery.
+  </Accordion>
+
+  <Accordion title="What happens if an agent is compromised?">
+    Immediately freeze the wallet:
+    
+    ```python
+    client.wallets.freeze(wallet_id=wallet.wallet_id)
+    ```
+    
+    Then create a new wallet with updated policies. The old wallet can remain frozen indefinitely.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Spending Policies" icon="shield-check" href="/guides/spending-policies">
+    Set up natural language spending policies
+  </Card>
+  <Card title="Making Payments" icon="credit-card" href="/guides/making-payments">
+    Execute payments from your wallet
+  </Card>
+  <Card title="Virtual Cards" icon="credit-card" href="/guides/virtual-cards">
+    Issue virtual cards for agents
+  </Card>
+  <Card title="Testing" icon="flask" href="/guides/testing">
+    Test your integration
+  </Card>
+</CardGroup>

@@ -1,0 +1,56 @@
+---
+title: 'Holds'
+description: 'Pre-authorize and hold funds'
+---
+
+## Overview
+
+Holds allow you to reserve funds before a transaction is finalized, similar to hotel/rental car holds.
+
+## Create Hold
+
+```bash cURL
+curl -X POST https://api.sardis.sh/api/v2/holds \
+  -H "Authorization: Bearer sk_live_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "wallet_id": "wallet_abc123",
+    "amount": "100.00",
+    "token": "USDC",
+    "purpose": "Hotel deposit",
+    "expiration_hours": 168
+  }'
+```
+
+```python Python
+hold = client.holds.create(
+    wallet_id="wallet_abc123",
+    amount="100.00",
+    token="USDC",
+    purpose="Hotel deposit",
+    expiration_hours=168  # 7 days
+)
+```
+
+## Capture Hold
+
+```bash cURL
+curl -X POST https://api.sardis.sh/api/v2/holds/hold_abc123/capture \
+  -H "Authorization: Bearer sk_live_your_api_key" \
+  -H "Content-Type: application/json" \
+  -d '{"amount": "75.00"}'
+```
+
+## Void Hold
+
+```bash cURL
+curl -X POST https://api.sardis.sh/api/v2/holds/hold_abc123/void \
+  -H "Authorization: Bearer sk_live_your_api_key"
+```
+
+## Hold States
+
+- `active`: Hold is active
+- `captured`: Hold was captured (funds transferred)
+- `voided`: Hold was cancelled (funds released)
+- `expired`: Hold expired without capture

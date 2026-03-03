@@ -1,0 +1,623 @@
+---
+title: Error Handling
+description: Comprehensive error handling patterns for Sardis SDKs
+---
+
+# Error Handling
+
+Both Sardis SDKs (Python and TypeScript) provide comprehensive error handling with standardized error codes, detailed error information, and type-safe error handling patterns.
+
+## Error Hierarchy
+
+### Python SDK
+
+All errors inherit from `SardisError`:
+
+```python
+from sardis_sdk import (
+    SardisError,           # Base error class
+    APIError,              # HTTP API errors
+    AuthenticationError,   # Auth failures
+    ValidationError,       # Input validation
+    NotFoundError,         # Resource not found
+    RateLimitError,        # Rate limit exceeded
+    NetworkError,          # Network failures
+    TimeoutError,          # Request timeout
+    InsufficientBalanceError,  # Insufficient funds
+    PaymentError,          # Payment failures
+    HoldError,             # Hold operation errors
+    BlockchainError,       # Blockchain errors
+    ComplianceError,       # Compliance violations
+)
+```
+
+### TypeScript SDK
+
+All errors extend `SardisError`:
+
+```typescript
+import {
+  SardisError,           // Base error class
+  APIError,              // HTTP API errors
+  AuthenticationError,   // Auth failures
+  ValidationError,       // Input validation
+  NotFoundError,         // Resource not found
+  RateLimitError,        // Rate limit exceeded
+  NetworkError,          // Network failures
+  TimeoutError,          // Request timeout
+  AbortError,            // Request cancelled
+  InsufficientBalanceError,  // Insufficient funds
+  PolicyViolationError,  // Policy violations
+  BlockchainError,       // Blockchain errors
+} from '@sardis/sdk';
+```
+
+## Error Codes
+
+Both SDKs use standardized error codes in the format `SARDIS_XXXX`:
+
+### General Errors (1000-1099)
+
+- `SARDIS_1000` - Unknown error
+- `SARDIS_1001` - Internal error
+- `SARDIS_1002` - Configuration error
+- `SARDIS_1003` - Initialization error
+
+### Authentication Errors (1100-1199)
+
+- `SARDIS_1100` - Authentication error
+- `SARDIS_1101` - Invalid API key
+- `SARDIS_1102` - Expired API key
+- `SARDIS_1103` - Insufficient permissions
+- `SARDIS_1104` - Forbidden
+- `SARDIS_2004` - Token refresh failed (TypeScript)
+
+### Validation Errors (1200-1299)
+
+- `SARDIS_1200` - Validation error
+- `SARDIS_1201` - Invalid field
+- `SARDIS_1202` - Missing required field
+- `SARDIS_1203` - Invalid format
+- `SARDIS_1204` - Value out of range
+- `SARDIS_5004` - Invalid chain
+- `SARDIS_5005` - Invalid token
+- `SARDIS_5006` - Invalid address
+
+### Resource Errors (1300-1399)
+
+- `SARDIS_1300` - Resource not found
+- `SARDIS_1301` - Agent not found
+- `SARDIS_1302` - Wallet not found
+- `SARDIS_1303` - Payment not found
+- `SARDIS_1304` - Hold not found
+
+### Payment Errors (1400-1499)
+
+- `SARDIS_1400` - Insufficient balance
+- `SARDIS_1401` - Payment failed
+- `SARDIS_1402` - Payment declined
+- `SARDIS_1403` - Invalid amount
+- `SARDIS_1408` - Hold expired
+- `SARDIS_1409` - Hold already captured
+- `SARDIS_1410` - Hold already voided
+- `SARDIS_6001` - Spending limit exceeded
+- `SARDIS_6002` - Policy violation
+
+### Rate Limiting (1500-1599)
+
+- `SARDIS_1500` - Rate limit exceeded
+- `SARDIS_1502` - Too many requests
+
+### Network Errors (1600-1699)
+
+- `SARDIS_1600` - Network error
+- `SARDIS_1601` - Connection error
+- `SARDIS_1602` - Timeout error
+- `SARDIS_1604` - SSL error
+
+### Blockchain Errors (1800-1899)
+
+- `SARDIS_1800` - Blockchain error
+- `SARDIS_1801` - Transaction failed
+- `SARDIS_1802` - Gas estimation failed
+- `SARDIS_1806` - Chain not supported
+
+### Compliance Errors (1900-1999)
+
+- `SARDIS_1900` - Compliance error
+- `SARDIS_1901` - KYC required
+- `SARDIS_1902` - Sanctions check failed
+- `SARDIS_1904` - Policy violation
+
+## Basic Error Handling
+
+### Python
+
+```python
+from sardis_sdk import SardisClient, SardisError, InsufficientBalanceError
+
+client = SardisClient(api_key="sk_live_...")
+
+try:
+    result = client.payments.send(
+        wallet_id="wallet_123",
+        to="recipient.eth",
+        amount="100.00",
+        token="USDC"
+    )
+    print(f"Payment successful: {result.tx_hash}")
+
+except InsufficientBalanceError as e:
+    print(f"Not enough funds: {e.message}")
+    print(f"Error code: {e.code}")
+    print(f"Request ID: {e.request_id}")
+
+except SardisError as e:
+    print(f"Payment failed: {e.message}")
+    print(f"Error code: {e.code}")
+    
+    if e.retryable:
+        print("This error is retryable")
+```
+
+### TypeScript
+
+```typescript
+import { SardisClient, InsufficientBalanceError, isSardisError } from '@sardis/sdk';
+
+const client = new SardisClient({ apiKey: 'sk_live_...' });
+
+try {
+  const result = await client.payments.executeMandate({
+    wallet_id: 'wallet_123',
+    mandate: { /* ... */ },
+  });
+  console.log('Payment successful:', result.tx_hash);
+
+} catch (error) {
+  if (error instanceof InsufficientBalanceError) {
+    console.error('Not enough funds:', error.message);
+    console.error('Error code:', error.code);
+    console.error('Request ID:', error.requestId);
+  } else if (isSardisError(error)) {
+    console.error('Payment failed:', error.message);
+    console.error('Error code:', error.code);
+    
+    if (error.retryable) {
+      console.log('This error is retryable');
+    }
+  } else {
+    throw error; // Re-throw non-Sardis errors
+  }
+}
+```
+
+## Specific Error Types
+
+### Authentication Errors
+
+```python
+from sardis_sdk import AuthenticationError
+
+try:
+    client = SardisClient(api_key="invalid_key")
+    client.agents.list()
+except AuthenticationError as e:
+    print(f"Invalid API key: {e.message}")
+    # Prompt user to update credentials
+```
+
+```typescript
+import { AuthenticationError } from '@sardis/sdk';
+
+try {
+  const client = new SardisClient({ apiKey: 'invalid_key' });
+  await client.agents.list();
+} catch (error) {
+  if (error instanceof AuthenticationError) {
+    console.error('Invalid API key:', error.message);
+    // Prompt user to update credentials
+  }
+}
+```
+
+### Rate Limit Errors
+
+```python
+from sardis_sdk import RateLimitError
+import time
+
+try:
+    result = client.payments.send(...)
+except RateLimitError as e:
+    retry_after = e.retry_after  # Seconds until rate limit resets
+    print(f"Rate limited. Retry after {retry_after} seconds")
+    print(f"Limit: {e.limit}")
+    print(f"Remaining: {e.remaining}")
+    
+    time.sleep(retry_after)
+    result = client.payments.send(...)  # Retry
+```
+
+```typescript
+import { RateLimitError } from '@sardis/sdk';
+
+try {
+  const result = await client.payments.executeMandate(...);
+} catch (error) {
+  if (error instanceof RateLimitError) {
+    console.log(`Rate limited. Retry after ${error.retryAfter} seconds`);
+    console.log(`Limit: ${error.limit}`);
+    console.log(`Remaining: ${error.remaining}`);
+    console.log(`Reset at: ${error.resetAt}`);
+    
+    await new Promise(resolve => 
+      setTimeout(resolve, error.retryAfter! * 1000)
+    );
+    // Retry the request
+  }
+}
+```
+
+### Network Errors
+
+```python
+from sardis_sdk import NetworkError, TimeoutError, ConnectionError
+
+try:
+    result = client.payments.send(...)
+except TimeoutError as e:
+    print(f"Request timed out after {e.timeout}ms")
+    # Retry with longer timeout
+except ConnectionError as e:
+    print(f"Failed to connect: {e.message}")
+    # Check network connectivity
+except NetworkError as e:
+    print(f"Network error: {e.message}")
+    if e.retryable:
+        # Retry the request
+        pass
+```
+
+```typescript
+import { NetworkError, TimeoutError, isRetryableError } from '@sardis/sdk';
+
+try {
+  const result = await client.payments.executeMandate(...);
+} catch (error) {
+  if (error instanceof TimeoutError) {
+    console.error(`Request timed out after ${error.timeout}ms`);
+    // Retry with longer timeout
+  } else if (isRetryableError(error)) {
+    console.log('Network error is retryable');
+    // Implement retry logic
+  }
+}
+```
+
+### Validation Errors
+
+```python
+from sardis_sdk import ValidationError
+
+try:
+    wallet = client.wallets.create(
+        agent_id="agent_123",
+        chain="invalid_chain",  # Invalid!
+        currency="USDC"
+    )
+except ValidationError as e:
+    print(f"Validation failed: {e.message}")
+    print(f"Invalid fields: {e.details}")
+    # e.details contains field-specific errors
+```
+
+```typescript
+import { ValidationError } from '@sardis/sdk';
+
+try {
+  const wallet = await client.wallets.create({
+    agent_id: 'agent_123',
+    chain: 'invalid_chain',  // Invalid!
+    currency: 'USDC',
+  });
+} catch (error) {
+  if (error instanceof ValidationError) {
+    console.error('Validation failed:', error.message);
+    console.error('Invalid fields:', error.details);
+    // error.details contains field-specific errors
+  }
+}
+```
+
+### Payment Errors
+
+```python
+from sardis_sdk import (
+    InsufficientBalanceError,
+    PolicyViolationError,
+    PaymentError
+)
+
+try:
+    result = client.payments.send(
+        wallet_id="wallet_123",
+        to="merchant.eth",
+        amount="1000.00",
+        token="USDC"
+    )
+except InsufficientBalanceError as e:
+    print(f"Insufficient balance")
+    print(f"Required: {e.details.get('required_amount')}")
+    print(f"Available: {e.details.get('available_amount')}")
+    
+except PolicyViolationError as e:
+    print(f"Policy violation: {e.message}")
+    print(f"Reason: {e.details.get('reason')}")
+    
+except PaymentError as e:
+    print(f"Payment failed: {e.message}")
+```
+
+### Hold Errors
+
+```python
+from sardis_sdk import (
+    HoldExpiredError,
+    HoldAlreadyCapturedError,
+    HoldAlreadyVoidedError
+)
+
+try:
+    capture = client.holds.capture(
+        hold_id="hold_123",
+        amount="50.00"
+    )
+except HoldExpiredError as e:
+    print(f"Hold has expired")
+    print(f"Expired at: {e.details.get('expired_at')}")
+    
+except HoldAlreadyCapturedError as e:
+    print(f"Hold already captured")
+    print(f"Captured amount: {e.details.get('captured_amount')}")
+    
+except HoldAlreadyVoidedError as e:
+    print(f"Hold was voided at: {e.details.get('voided_at')}")
+```
+
+## Error Inspection
+
+### Python
+
+```python
+from sardis_sdk import SardisError, ErrorCode
+
+try:
+    result = client.payments.send(...)
+except SardisError as e:
+    # Check error code
+    if e.code == ErrorCode.INSUFFICIENT_BALANCE:
+        print("Not enough funds")
+    elif e.code == ErrorCode.POLICY_VIOLATION:
+        print("Blocked by policy")
+    
+    # Access error details
+    print(f"Message: {e.message}")
+    print(f"Code: {e.code}")
+    print(f"Severity: {e.severity}")
+    print(f"Retryable: {e.retryable}")
+    print(f"Request ID: {e.request_id}")
+    print(f"Details: {e.details}")
+    
+    # Convert to dict
+    error_dict = e.to_dict()
+    print(error_dict)
+```
+
+### TypeScript
+
+```typescript
+import { SardisError, SardisErrorCode } from '@sardis/sdk';
+
+try {
+  const result = await client.payments.executeMandate(...);
+} catch (error) {
+  if (error instanceof SardisError) {
+    // Check error code
+    if (error.code === SardisErrorCode.INSUFFICIENT_BALANCE) {
+      console.log('Not enough funds');
+    } else if (error.code === SardisErrorCode.POLICY_VIOLATION) {
+      console.log('Blocked by policy');
+    }
+    
+    // Access error properties
+    console.log('Message:', error.message);
+    console.log('Code:', error.code);
+    console.log('Retryable:', error.retryable);
+    console.log('Request ID:', error.requestId);
+    console.log('Details:', error.details);
+    console.log('Timestamp:', error.timestamp);
+    
+    // Convert to JSON
+    const errorJSON = error.toJSON();
+    console.log(errorJSON);
+  }
+}
+```
+
+## Retry Logic
+
+### Python with Manual Retry
+
+```python
+from sardis_sdk import SardisClient, NetworkError, RateLimitError
+import time
+
+def send_payment_with_retry(client, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            return client.payments.send(
+                wallet_id="wallet_123",
+                to="merchant.eth",
+                amount="50.00",
+                token="USDC"
+            )
+        except RateLimitError as e:
+            if e.retry_after:
+                time.sleep(e.retry_after)
+            else:
+                time.sleep(2 ** attempt)  # Exponential backoff
+        except NetworkError as e:
+            if not e.retryable or attempt == max_retries - 1:
+                raise
+            time.sleep(2 ** attempt)
+    
+    raise Exception("Max retries exceeded")
+```
+
+### Python with Built-in Retry
+
+```python
+from sardis_sdk import SardisClient, RetryConfig
+
+client = SardisClient(
+    api_key="sk_live_...",
+    retry=RetryConfig(
+        max_retries=5,
+        initial_delay=1.0,
+        max_delay=30.0,
+        exponential_base=2.0,
+        jitter=True,
+        retry_on_status=(429, 500, 502, 503, 504),
+    )
+)
+
+# Retries are automatic
+result = client.payments.send(...)
+```
+
+### TypeScript with Manual Retry
+
+```typescript
+import { SardisClient, NetworkError, RateLimitError, isRetryableError } from '@sardis/sdk';
+
+async function sendPaymentWithRetry(client: SardisClient, maxRetries = 3) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await client.payments.executeMandate({
+        wallet_id: 'wallet_123',
+        mandate: { /* ... */ },
+      });
+    } catch (error) {
+      if (error instanceof RateLimitError) {
+        const delay = error.retryAfter ? error.retryAfter * 1000 : 2 ** attempt * 1000;
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else if (isRetryableError(error)) {
+        if (attempt === maxRetries - 1) throw error;
+        await new Promise(resolve => setTimeout(resolve, 2 ** attempt * 1000));
+      } else {
+        throw error;
+      }
+    }
+  }
+  throw new Error('Max retries exceeded');
+}
+```
+
+### TypeScript with Built-in Retry
+
+```typescript
+import { SardisClient } from '@sardis/sdk';
+
+const client = new SardisClient({
+  apiKey: 'sk_live_...',
+  maxRetries: 5,
+  retryDelay: 1000,
+  maxRetryDelay: 30000,
+  retryOn: [408, 429, 500, 502, 503, 504],
+  retryOnNetworkError: true,
+});
+
+// Retries are automatic
+const result = await client.payments.executeMandate(...);
+```
+
+## Error Logging
+
+### Python
+
+```python
+import logging
+from sardis_sdk import SardisClient, SardisError
+
+logger = logging.getLogger(__name__)
+
+try:
+    result = client.payments.send(...)
+except SardisError as e:
+    logger.error(
+        "Payment failed",
+        extra={
+            "error_code": e.code,
+            "error_message": e.message,
+            "request_id": e.request_id,
+            "severity": e.severity.value,
+            "details": e.details,
+        }
+    )
+    # Log to your monitoring service
+    sentry.capture_exception(e)
+```
+
+### TypeScript
+
+```typescript
+import { SardisError } from '@sardis/sdk';
+import * as Sentry from '@sentry/node';
+
+try {
+  const result = await client.payments.executeMandate(...);
+} catch (error) {
+  if (error instanceof SardisError) {
+    console.error('Payment failed', {
+      code: error.code,
+      message: error.message,
+      requestId: error.requestId,
+      details: error.details,
+      timestamp: error.timestamp,
+    });
+    
+    // Log to monitoring service
+    Sentry.captureException(error, {
+      extra: {
+        errorCode: error.code,
+        requestId: error.requestId,
+      },
+    });
+  }
+}
+```
+
+## Best Practices
+
+1. **Always catch specific errors first** - Handle specific error types before catching the base `SardisError`
+
+2. **Check if errors are retryable** - Use the `retryable` property to determine if an operation can be retried
+
+3. **Log request IDs** - Include `request_id` in logs for support requests
+
+4. **Use error codes for programmatic handling** - Don't rely on error messages, use error codes
+
+5. **Implement exponential backoff** - For retryable errors, use exponential backoff with jitter
+
+6. **Monitor error rates** - Track error rates by type and code in your monitoring system
+
+7. **Handle rate limits gracefully** - Respect `retry_after` headers for rate limit errors
+
+8. **Provide user feedback** - Convert technical errors to user-friendly messages
+
+## See Also
+
+- [Python Reference](/sdks/python-reference) - Complete Python API reference
+- [TypeScript Reference](/sdks/typescript-reference) - Complete TypeScript API reference
+- [Async Patterns](/sdks/async-patterns) - Async/await usage patterns

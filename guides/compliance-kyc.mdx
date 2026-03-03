@@ -1,0 +1,551 @@
+---
+title: Compliance & KYC
+description: Verify agent identities and screen transactions for compliance
+---
+
+Sardis integrates with compliance providers to ensure agents and transactions meet regulatory requirements. This includes KYC (Know Your Customer) via Persona, AML (Anti-Money Laundering) via Elliptic, and sanctions screening.
+
+## Why Compliance Matters
+
+- **Regulatory Requirements**: Financial regulations require identity verification
+- **Risk Management**: Screen for sanctioned entities and high-risk addresses
+- **Fraud Prevention**: Detect suspicious activity and block bad actors
+- **Trust Building**: Verified agents build reputation in the ecosystem
+
+## KYC Verification with Persona
+
+<Steps>
+  <Step title="Enable KYC for Your Organization">
+    Configure Persona API credentials:
+    
+    ```bash
+    export PERSONA_API_KEY="persona_sandbox_..."
+    export PERSONA_TEMPLATE_ID="itmpl_..."
+    ```
+    
+    Get your credentials from [Persona Dashboard](https://withpersona.com/dashboard).
+  </Step>
+
+  <Step title="Create KYC Inquiry">
+    Start a KYC verification for an agent or user:
+    
+    ```python
+    from sardis import SardisClient
+    
+    client = SardisClient(api_key="sk_...")
+    
+    # Create KYC inquiry
+    inquiry = client.compliance.kyc.create_inquiry(
+        reference_id="agent_abc123",  # Your internal ID
+        name_first="Alice",
+        name_last="Smith",
+        email="alice@example.com",
+        phone="+1-415-555-0100"
+    )
+    
+    print(f"Inquiry ID: {inquiry.inquiry_id}")
+    print(f"Session token: {inquiry.session_token}")
+    print(f"Status: {inquiry.status}")
+    ```
+  </Step>
+
+  <Step title="Redirect User to Verification">
+    Use Persona's embedded flow or redirect URL:
+    
+    ```python
+    # Option 1: Embed in your app (recommended)
+    verification_url = f"https://withpersona.com/verify?inquiry-id={inquiry.inquiry_id}"
+    print(f"Complete KYC at: {verification_url}")
+    
+    # Option 2: Use Persona SDK (JavaScript)
+    """
+    <script src="https://cdn.withpersona.com/dist/persona-v4.0.0.js"></script>
+    <script>
+      const client = new Persona.Client({
+        inquiryId: '{inquiry.inquiry_id}',
+        sessionToken: '{inquiry.session_token}',
+        environment: 'sandbox',  // or 'production'
+        onComplete: ({ inquiryId, status }) => {
+          console.log('KYC complete:', inquiryId, status);
+          // Redirect or notify your backend
+        }
+      });
+      client.open();
+    </script>
+    """
+    ```
+  </Step>
+
+  <Step title="Check Verification Status">
+    Poll or use webhooks to check KYC status:
+    
+    ```python
+    # Check status
+    result = client.compliance.kyc.get_status(
+        inquiry_id=inquiry.inquiry_id
+    )
+    
+    print(f"Status: {result.status}")  # pending, approved, declined, needs_review
+    
+    if result.is_verified:
+        print("✓ KYC approved!")
+        print(f"Verified at: {result.verified_at}")
+        print(f"Expires at: {result.expires_at}")
+    else:
+        print(f"✗ KYC {result.status}")
+        if result.reason:
+            print(f"Reason: {result.reason}")
+    ```
+  </Step>
+</Steps>
+
+### KYC Verification Types
+
+Persona supports multiple verification types:
+
+```python
+from sardis_compliance.kyc import VerificationType
+
+# Identity verification (government ID)
+identity_inquiry = client.compliance.kyc.create_inquiry(
+    reference_id="agent_123",
+    verification_type=VerificationType.IDENTITY,
+    name_first="Bob",
+    name_last="Jones",
+    email="bob@example.com"
+)
+
+# Document verification
+document_inquiry = client.compliance.kyc.create_inquiry(
+    reference_id="agent_123",
+    verification_type=VerificationType.DOCUMENT
+)
+
+# Selfie verification (liveness check)
+selfie_inquiry = client.compliance.kyc.create_inquiry(
+    reference_id="agent_123",
+    verification_type=VerificationType.SELFIE
+)
+
+# Address verification
+address_inquiry = client.compliance.kyc.create_inquiry(
+    reference_id="agent_123",
+    verification_type=VerificationType.ADDRESS,
+    address_street="123 Main St",
+    address_city="San Francisco",
+    address_country="US",
+    address_postal_code="94103"
+)
+```
+
+### KYC Webhooks
+
+Receive real-time updates on KYC status:
+
+```python
+# Subscribe to KYC events
+client.webhooks.create(
+    url="https://yourapp.com/webhooks/kyc",
+    events=[
+        "kyc.inquiry.created",
+        "kyc.inquiry.completed",
+        "kyc.inquiry.approved",
+        "kyc.inquiry.declined",
+        "kyc.inquiry.expired",
+    ]
+)
+
+# Webhook handler
+@app.route("/webhooks/kyc", methods=["POST"])
+def handle_kyc_webhook():
+    event = request.json
+    
+    if event["type"] == "kyc.inquiry.approved":
+        # Enable wallet for agent
+        agent_id = event["data"]["reference_id"]
+        client.wallets.enable(agent_id=agent_id)
+        print(f"Agent {agent_id} KYC approved - wallet enabled")
+        
+    elif event["type"] == "kyc.inquiry.declined":
+        # Disable wallet
+        agent_id = event["data"]["reference_id"]
+        client.wallets.disable(
+            agent_id=agent_id,
+            reason="KYC verification failed"
+        )
+        print(f"Agent {agent_id} KYC declined - wallet disabled")
+    
+    return {"status": "ok"}
+```
+
+## AML Screening with Elliptic
+
+Screen wallet addresses and transactions for sanctions and high-risk activity:
+
+### Wallet Screening
+
+```python
+# Screen a wallet address
+screening = client.compliance.sanctions.screen_wallet(
+    address="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+    chain="ethereum",
+    check_related=True  # Also check connected addresses
+)
+
+print(f"Risk Level: {screening.risk_level}")  # low, medium, high, severe, blocked
+print(f"Sanctioned: {screening.is_sanctioned}")
+
+if screening.should_block:
+    print("✗ Address is sanctioned or high-risk - blocking transaction")
+    print(f"Reason: {screening.reason}")
+    
+    for match in screening.matches:
+        print(f"  Match: {match['list']} - {match['entity_name']}")
+else:
+    print("✓ Address cleared")
+```
+
+### Transaction Screening
+
+Screen transactions before execution:
+
+```python
+# Screen before payment
+result = client.compliance.sanctions.screen_transaction(
+    tx_hash="0xabc...",  # Can be empty for pre-screening
+    chain="base",
+    from_address=wallet.address,
+    to_address="0x1234...",
+    amount=100.00,
+    token="USDC"
+)
+
+if result.should_block:
+    print("✗ Transaction blocked by sanctions screening")
+    print(f"Reason: {result.reason}")
+    # Don't execute transaction
+else:
+    print("✓ Transaction cleared - executing")
+    wallet.pay(to="0x1234...", amount=100, token="USDC")
+```
+
+### Sanctions Lists
+
+Screen against specific sanctions lists:
+
+```python
+from sardis_compliance.sanctions import SanctionsList
+
+# Screen against OFAC only
+ofac_screening = client.compliance.sanctions.screen_wallet(
+    address="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+    chain="ethereum",
+    lists=[SanctionsList.OFAC]  # US Treasury
+)
+
+# Screen against all lists
+full_screening = client.compliance.sanctions.screen_wallet(
+    address="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+    chain="ethereum",
+    lists=[
+        SanctionsList.OFAC,  # US
+        SanctionsList.EU,    # European Union
+        SanctionsList.UN,    # United Nations
+        SanctionsList.UK,    # United Kingdom
+    ]
+)
+```
+
+## Automatic Compliance Checks
+
+Enable automatic screening for all transactions:
+
+```python
+# Enable auto-compliance at the wallet level
+wallet = client.wallets.create(
+    name="compliant-agent",
+    chain="base",
+    policy="Max $1000/day",
+    compliance={
+        "kyc_required": True,
+        "sanctions_screening": True,
+        "transaction_monitoring": True,
+        "fail_closed": True  # Block on compliance errors
+    }
+)
+
+# All payments automatically screened
+result = wallet.pay(to="merchant.com", amount=100, token="USDC")
+
+if result.status == "rejected":
+    if "compliance" in result.message:
+        print(f"Blocked by compliance: {result.compliance_reason}")
+```
+
+### Compliance Policies
+
+Define compliance rules:
+
+```python
+from sardis_compliance.checks import ComplianceEngine, SimpleRuleProvider
+
+# Create compliance engine
+engine = ComplianceEngine(
+    providers=[
+        SimpleRuleProvider(
+            blocked_countries=["KP", "IR", "SY"],  # North Korea, Iran, Syria
+            blocked_tokens=[],
+            min_age_days=30,  # Wallet must be >30 days old
+            max_risk_score=75
+        )
+    ]
+)
+
+# Check compliance
+mandate = create_payment_mandate(
+    amount=100,
+    token="USDC",
+    destination="0x1234..."
+)
+
+result = await engine.check_compliance(mandate)
+
+if not result.allowed:
+    print(f"Compliance check failed: {result.reason}")
+```
+
+## Risk Scoring
+
+Sardis assigns risk scores to agents and transactions:
+
+```python
+# Get agent risk score
+risk = client.compliance.risk.get_score(agent_id="agent_123")
+
+print(f"Risk Score: {risk.score}/100")
+print(f"Risk Level: {risk.level}")  # low, medium, high, severe
+
+# Risk factors
+for factor in risk.factors:
+    print(f"  {factor.name}: {factor.score}/10")
+    print(f"    Weight: {factor.weight}%")
+    print(f"    {factor.description}")
+
+# Risk actions
+if risk.level == "high":
+    for action in risk.recommended_actions:
+        print(f"Recommended: {action}")
+    # e.g., "Require additional KYC", "Limit transaction amounts", etc.
+```
+
+**Risk factors include:**
+- Transaction velocity (frequency and volume)
+- Geographic risk (IP location, wallet origin)
+- Age of wallet/agent
+- Past compliance issues
+- Connection to high-risk addresses
+- Behavioral anomalies
+
+## Compliance Reporting
+
+Generate compliance reports:
+
+```python
+# Generate monthly compliance report
+report = client.compliance.reports.generate(
+    report_type="monthly",
+    start_date="2026-02-01",
+    end_date="2026-02-28",
+    format="pdf"  # or "json", "csv"
+)
+
+print(f"Report ID: {report.report_id}")
+print(f"Download: {report.download_url}")
+
+# Report includes:
+# - Total transactions screened
+# - Sanctions matches
+# - High-risk transactions blocked
+# - KYC verifications completed
+# - Compliance violations
+```
+
+## PEP Screening
+
+Screen for Politically Exposed Persons:
+
+```python
+from sardis_compliance.pep import PEPScreeningRequest
+
+# Screen individual
+pep_result = client.compliance.pep.screen(
+    name_first="John",
+    name_last="Doe",
+    date_of_birth="1980-01-01",
+    country="US"
+)
+
+print(f"PEP Match: {pep_result.is_pep}")
+print(f"Risk Level: {pep_result.risk_level}")
+
+if pep_result.matches:
+    for match in pep_result.matches:
+        print(f"  {match['name']} - {match['position']}")
+        print(f"  Category: {match['category']}")
+        print(f"  Country: {match['country']}")
+```
+
+## Ongoing Monitoring
+
+Continuously monitor agents and wallets:
+
+```python
+# Enable ongoing monitoring
+client.compliance.monitoring.enable(
+    agent_id="agent_123",
+    monitoring_type="continuous",
+    alert_on=[
+        "sanctions_match",
+        "high_risk_transaction",
+        "velocity_spike",
+        "pep_match",
+        "adverse_media"
+    ]
+)
+
+# Get monitoring alerts
+alerts = client.compliance.monitoring.get_alerts(
+    agent_id="agent_123",
+    severity=["high", "critical"]
+)
+
+for alert in alerts:
+    print(f"{alert.timestamp}: {alert.type}")
+    print(f"  Severity: {alert.severity}")
+    print(f"  Details: {alert.description}")
+    print(f"  Action: {alert.recommended_action}")
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="KYC verification stuck in 'pending' status">
+    Persona verifications typically complete in 1-5 minutes. If stuck:
+    
+    1. Check if user completed all steps
+    2. Verify template configuration in Persona dashboard
+    3. Check webhook logs for errors
+    
+    ```python
+    # Get detailed inquiry status
+    inquiry = client.compliance.kyc.get_inquiry_details(
+        inquiry_id=inquiry.inquiry_id
+    )
+    
+    print(f"Status: {inquiry.status}")
+    print(f"Fields completed: {inquiry.fields_completed}")
+    print(f"Fields remaining: {inquiry.fields_remaining}")
+    ```
+  </Accordion>
+
+  <Accordion title="False positive sanctions match">
+    If a legitimate address is flagged:
+    
+    ```python
+    # Whitelist the address
+    client.compliance.sanctions.add_to_whitelist(
+        address="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+        reason="Verified legitimate merchant",
+        approved_by="compliance_officer_123"
+    )
+    ```
+    
+    Whitelisted addresses bypass sanctions screening but are still logged.
+  </Accordion>
+
+  <Accordion title="Compliance checks slowing down transactions">
+    Optimize with caching:
+    
+    ```python
+    # Cache screening results for 1 hour
+    screening = client.compliance.sanctions.screen_wallet(
+        address="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+        chain="ethereum",
+        cache_ttl=3600  # 1 hour
+    )
+    ```
+    
+    Or use async screening:
+    
+    ```python
+    # Screen in background, callback when complete
+    client.compliance.sanctions.screen_wallet_async(
+        address="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+        chain="ethereum",
+        callback_url="https://yourapp.com/webhooks/screening"
+    )
+    ```
+  </Accordion>
+
+  <Accordion title="KYC requirements by jurisdiction">
+    Different jurisdictions have different requirements:
+    
+    **United States:**
+    - Identity verification (government ID)
+    - SSN verification
+    - Address verification
+    
+    **European Union:**
+    - Identity verification
+    - Address verification
+    - Source of funds (for high-value)
+    
+    **United Kingdom:**
+    - Identity verification
+    - Address verification
+    - PEP screening
+    
+    Configure based on your users:
+    
+    ```python
+    inquiry = client.compliance.kyc.create_inquiry(
+        reference_id="agent_123",
+        jurisdiction="US",  # Auto-configures requirements
+        name_first="Alice",
+        name_last="Smith"
+    )
+    ```
+  </Accordion>
+
+  <Accordion title="Do AI agents need KYC?">
+    It depends on the agent's owner/operator:
+    
+    - **Individual agents**: Owner must complete KYC
+    - **Business agents**: Business KYB (Know Your Business) required
+    - **Autonomous agents**: Depends on jurisdiction and use case
+    
+    Sardis recommends:
+    1. KYC the agent owner/operator
+    2. Enable transaction monitoring on the agent wallet
+    3. Set appropriate spending limits
+    
+    For fully autonomous agents without human operators (future scenario), KYA (Know Your Agent) verification is emerging.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Webhooks" icon="webhook" href="/guides/webhooks">
+    Monitor compliance events
+  </Card>
+  <Card title="Testing" icon="flask" href="/guides/testing">
+    Test compliance in sandbox
+  </Card>
+  <Card title="Spending Policies" icon="shield-check" href="/guides/spending-policies">
+    Combine policies with compliance
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Full compliance API docs
+  </Card>
+</CardGroup>

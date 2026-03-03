@@ -1,0 +1,357 @@
+---
+title: 'Examples'
+description: 'Real-world examples of building AI agents with Sardis'
+icon: 'code'
+---
+
+Explore production-ready examples showing how to integrate Sardis with popular AI frameworks. All examples include spending policies, wallet management, and real payment execution.
+
+<CardGroup cols={2}>
+  <Card title="View on GitHub" icon="github" href="https://github.com/EfeDurmaz16/sardis/tree/main/examples">
+    Browse the complete examples directory
+  </Card>
+  <Card title="Playground" icon="play" href="https://sardis.sh/playground">
+    Try Sardis in your browser
+  </Card>
+</CardGroup>
+
+## Quick Start Examples
+
+### Simple Payment
+
+The simplest way to get started with Sardis - create a wallet and make a payment in 5 lines.
+
+```python examples/simple_payment.py
+from sardis import Wallet, Transaction
+
+# Create wallet with balance
+wallet = Wallet(initial_balance=50, currency="USDC")
+
+# Execute payment
+tx = Transaction(
+    from_wallet=wallet,
+    to="openai:api",
+    amount=2,
+    purpose="GPT-4 API call"
+)
+
+result = tx.execute()
+print(f"Status: {result.status}")
+print(f"TX Hash: {result.tx_hash}")
+```
+
+<Card title="View Full Example" icon="arrow-right" href="https://github.com/EfeDurmaz16/sardis/blob/main/examples/simple_payment.py" />
+
+---
+
+## Framework Integrations
+
+### LangChain Payment Agent
+
+AI agent that makes payments using Sardis + LangChain with spending policies.
+
+**What it does:**
+- Creates a Sardis wallet with spending policy
+- Sets up LangChain tools (pay, check balance, check policy)
+- Agent checks balance, validates policy, and executes payment
+
+```bash
+pip install sardis-langchain langchain langchain-openai
+
+export SARDIS_API_KEY="sk_..."
+export OPENAI_API_KEY="sk-..."
+python examples/langchain-payment-agent/main.py
+```
+
+<Card title="View Full Example" icon="arrow-right" href="https://github.com/EfeDurmaz16/sardis/blob/main/examples/langchain-payment-agent" />
+
+### OpenAI Assistant with Wallet
+
+OpenAI function calling agent with Sardis payment capabilities.
+
+**Tools Available:**
+- `sardis_pay` - Execute USDC payment
+- `sardis_check_balance` - Check wallet balance
+- `sardis_check_policy` - Validate spending policy
+- `sardis_issue_card` - Create virtual card
+- `sardis_get_spending_summary` - Spending analytics
+
+```bash
+pip install sardis-openai openai
+
+export SARDIS_API_KEY="sk_..."
+export OPENAI_API_KEY="sk-..."
+python examples/openai-assistant-with-wallet/main.py
+```
+
+<Card title="View Full Example" icon="arrow-right" href="https://github.com/EfeDurmaz16/sardis/blob/main/examples/openai-assistant-with-wallet" />
+
+### Anthropic Claude Agent SDK
+
+Claude agent with Sardis payment tools using the sardis-agent-sdk package.
+
+**Three modes demonstrated:**
+1. **Automated loop** - Fully managed conversation with `run_agent_loop()`
+2. **Manual loop** - Full control over each turn
+3. **Read-only observer** - Auditor agent with balance checking only
+
+```python
+from sardis import SardisClient
+from sardis_agent_sdk import SardisToolkit
+import anthropic
+
+# Create toolkit
+toolkit = SardisToolkit(
+    client=sardis,
+    wallet_id=wallet.wallet_id,
+)
+
+# Run automated agent loop
+result = toolkit.run_agent_loop(
+    client=anthropic.Anthropic(),
+    model="claude-sonnet-4-5-20250929",
+    system_prompt="You are a procurement agent with a Sardis wallet.",
+    user_message="Purchase $30 of OpenAI API credits",
+    max_turns=5,
+)
+```
+
+<Card title="View Full Example" icon="arrow-right" href="https://github.com/EfeDurmaz16/sardis/blob/main/examples/anthropic_agent_sdk.py" />
+
+### CrewAI Procurement Team
+
+Multi-agent procurement system with Sardis + CrewAI.
+
+**Agents:**
+- **Vendor Researcher** - Finds and compares vendors
+- **Procurement Agent** - Executes purchases with Sardis wallet
+- **Spend Auditor** - Reviews transactions for compliance
+
+```bash
+pip install sardis-crewai crewai crewai-tools
+
+export SARDIS_API_KEY="sk_..."
+export OPENAI_API_KEY="sk-..."
+python examples/crewai-procurement-team/main.py
+```
+
+<Card title="View Full Example" icon="arrow-right" href="https://github.com/EfeDurmaz16/sardis/blob/main/examples/crewai-procurement-team" />
+
+### Gemini Shopping Agent
+
+Google Gemini agent with Sardis payment capabilities using the ADK.
+
+```bash
+pip install sardis-adk google-generativeai
+
+export SARDIS_API_KEY="sk_..."
+export GOOGLE_API_KEY="..."
+python examples/gemini-shopping-agent/main.py
+```
+
+<Card title="View Full Example" icon="arrow-right" href="https://github.com/EfeDurmaz16/sardis/blob/main/examples/gemini-shopping-agent" />
+
+### Vercel AI SDK Chatbot
+
+AI chatbot with Sardis payment tools using Vercel AI SDK.
+
+```bash
+npm install @sardis/ai-sdk ai @ai-sdk/openai
+
+export SARDIS_API_KEY="sk_..."
+export OPENAI_API_KEY="sk-..."
+npx tsx examples/vercel-ai-chatbot/main.ts
+```
+
+<Card title="View Full Example" icon="arrow-right" href="https://github.com/EfeDurmaz16/sardis/blob/main/examples/vercel-ai-chatbot" />
+
+---
+
+## Advanced Use Cases
+
+### Agent-to-Agent Payments
+
+Demonstrates how two AI agents can transact with each other using the Sardis payment protocol, with full policy enforcement.
+
+**What it demonstrates:**
+- Programmable wallets for AI agents
+- Policy-enforced spending limits
+- Agent-to-agent transactions
+- Transaction logging and receipts
+
+```python
+from sardis import Agent, Policy
+
+# Create two agents with wallets
+alice = Agent(
+    name="Alice",
+    description="Shopping assistant that finds deals",
+    policy=Policy(max_per_tx=100, max_total=500)
+)
+alice.create_wallet(initial_balance=200, currency="USDC")
+
+bob = Agent(
+    name="Bob",
+    description="Data analysis service provider",
+    policy=Policy(max_per_tx=500, max_total=5000)
+)
+bob.create_wallet(initial_balance=50, currency="USDC")
+
+# Alice pays Bob for a service
+result = alice.pay(
+    to=bob.agent_id,
+    amount=25,
+    purpose="Data analysis service"
+)
+```
+
+<Card title="View Full Example" icon="arrow-right" href="https://github.com/EfeDurmaz16/sardis/blob/main/examples/agent_to_agent.py" />
+
+### Budget Allocation System
+
+Demonstrates all allocation strategies and key features of the budget allocation system.
+
+**Strategies:**
+- **Fixed Allocation** - Assign specific amounts to each agent
+- **Proportional Allocation** - Distribute based on weights
+- **Performance-Based** - Allocate based on ROI history
+- **Rollover** - Carry over unused budget with bonus allocation
+
+```python
+from sardis_v2_core.budget_allocator import (
+    BudgetAllocator,
+    AllocationStrategy,
+    BudgetPeriod,
+)
+
+allocator = BudgetAllocator()
+
+# Performance-based allocation
+agents = [
+    {"id": "high_roi_agent"},
+    {"id": "medium_roi_agent"},
+    {"id": "low_roi_agent"},
+]
+
+history = [
+    {"agent_id": "high_roi_agent", "spent": "1000", "value_generated": "5000"},
+    {"agent_id": "medium_roi_agent", "spent": "1000", "value_generated": "3000"},
+    {"agent_id": "low_roi_agent", "spent": "1000", "value_generated": "1500"},
+]
+
+cycle = allocator.create_cycle(
+    org_id="acme_corp",
+    period=BudgetPeriod.MONTHLY,
+    total_budget=Decimal("15000"),
+    currency="USDC",
+    strategy=AllocationStrategy.PERFORMANCE_BASED,
+    agent_configs=agents,
+    history=history,
+)
+```
+
+<Card title="View Full Example" icon="arrow-right" href="https://github.com/EfeDurmaz16/sardis/blob/main/examples/budget_allocation_demo.py" />
+
+### Alert Integration
+
+Integrate Sardis transaction alerts with your monitoring system.
+
+```bash
+python examples/alert_integration_example.py
+```
+
+<Card title="View Full Example" icon="arrow-right" href="https://github.com/EfeDurmaz16/sardis/blob/main/examples/alert_integration_example.py" />
+
+### Event Webhooks
+
+Receive real-time notifications about wallet events, transactions, and policy violations.
+
+```bash
+python examples/event_webhooks.py
+```
+
+<Card title="View Full Example" icon="arrow-right" href="https://github.com/EfeDurmaz16/sardis/blob/main/examples/event_webhooks.py" />
+
+### Gas Optimizer
+
+Optimize transaction gas costs across multiple chains.
+
+```bash
+python examples/gas_optimizer_demo.py
+```
+
+<Card title="View Full Example" icon="arrow-right" href="https://github.com/EfeDurmaz16/sardis/blob/main/examples/gas_optimizer_demo.py" />
+
+---
+
+## More Examples
+
+<CardGroup cols={2}>
+  <Card title="API Demo" icon="code" href="https://github.com/EfeDurmaz16/sardis/blob/main/examples/api_demo.py">
+    Complete API usage examples
+  </Card>
+  <Card title="CrewAI Finance Team" icon="users" href="https://github.com/EfeDurmaz16/sardis/blob/main/examples/crewai_finance_team.py">
+    Multi-agent financial operations
+  </Card>
+  <Card title="LangChain Agent" icon="link" href="https://github.com/EfeDurmaz16/sardis/blob/main/examples/langchain_sardis_agent.py">
+    LangChain integration examples
+  </Card>
+  <Card title="OpenAI Agents" icon="robot" href="https://github.com/EfeDurmaz16/sardis/blob/main/examples/openai_agents_payment.py">
+    OpenAI agent payment workflows
+  </Card>
+  <Card title="Vercel AI Payment" icon="bolt" href="https://github.com/EfeDurmaz16/sardis/blob/main/examples/vercel_ai_payment.ts">
+    TypeScript payment integration
+  </Card>
+  <Card title="Google ADK Agent" icon="google" href="https://github.com/EfeDurmaz16/sardis/blob/main/examples/google_adk_agent.py">
+    Google AI Development Kit integration
+  </Card>
+</CardGroup>
+
+---
+
+## Running Examples Locally
+
+### Prerequisites
+
+```bash
+# Clone the repository
+git clone https://github.com/EfeDurmaz16/sardis.git
+cd sardis
+
+# Install Python dependencies
+uv sync
+
+# Install TypeScript dependencies
+pnpm install
+```
+
+### Set Environment Variables
+
+```bash
+export SARDIS_API_KEY="sk_test_..."  # Get from https://sardis.sh/dashboard
+export OPENAI_API_KEY="sk-..."       # Optional, for AI framework examples
+```
+
+### Run Examples
+
+```bash
+# Python examples
+uv run python examples/simple_payment.py
+uv run python examples/agent_to_agent.py
+
+# TypeScript examples
+npx tsx examples/vercel_ai_payment.ts
+```
+
+---
+
+## Get Help
+
+<CardGroup cols={2}>
+  <Card title="Discord Community" icon="discord" href="https://discord.gg/XMA9JwDJ">
+    Ask questions and share your examples
+  </Card>
+  <Card title="GitHub Issues" icon="github" href="https://github.com/EfeDurmaz16/sardis/issues">
+    Report bugs or request examples
+  </Card>
+</CardGroup>

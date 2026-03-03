@@ -1,0 +1,429 @@
+---
+title: "Supported Tokens"
+description: "Complete reference for stablecoin tokens supported by Sardis across all blockchain networks."
+---
+
+Sardis supports 4 major stablecoins across 6+ blockchain networks, with automatic token routing and chain-aware address resolution.
+
+## Overview
+
+| Token | Issuer | Decimals | Peg | Chains |
+|-------|--------|----------|-----|--------|
+| **USDC** | Circle | 6 | 1:1 USD | Base, Ethereum, Polygon, Arbitrum, Optimism, Arc |
+| **USDT** | Tether | 6 | 1:1 USD | Ethereum, Polygon, Arbitrum, Optimism |
+| **PYUSD** | PayPal | 6 | 1:1 USD | Ethereum |
+| **EURC** | Circle | 6 | 1:1 EUR | Base, Ethereum, Polygon, Arc |
+
+**Source**: `packages/sardis-core/src/sardis_v2_core/tokens.py:46-99`
+
+---
+
+## Token Configurations
+
+### USDC (USD Coin)
+
+**Issuer**: Circle  
+**Decimals**: 6  
+**Peg**: 1:1 USD  
+**Contract Addresses**:
+
+```python
+"base": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+"ethereum": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+"polygon": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
+"arbitrum": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+"optimism": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85"
+"arc_testnet": "0x3600000000000000000000000000000000000000"
+```
+
+**Verification Links**:
+- Base: [View on Basescan](https://basescan.org/token/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913)
+- Ethereum: [View on Etherscan](https://etherscan.io/token/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48)
+- Polygon: [View on Polygonscan](https://polygonscan.com/token/0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359)
+
+**Minimum Transfer**: $0.01 USD
+
+**Best For**: 
+- Primary stablecoin for all Sardis operations
+- Native gas token on Arc Testnet
+- Highest liquidity across all chains
+- Circle CCTP bridge support for fast cross-chain transfers
+
+---
+
+### USDT (Tether USD)
+
+**Issuer**: Tether  
+**Decimals**: 6  
+**Peg**: 1:1 USD  
+**Contract Addresses**:
+
+```python
+"ethereum": "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+"polygon": "0xc2132D05D31c914a87C6611C10748AEb04B58e8F"
+"arbitrum": "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9"
+"optimism": "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58"
+```
+
+**Verification Links**:
+- Ethereum: [View on Etherscan](https://etherscan.io/token/0xdAC17F958D2ee523a2206206994597C13D831ec7)
+- Polygon: [View on Polygonscan](https://polygonscan.com/token/0xc2132D05D31c914a87C6611C10748AEb04B58e8F)
+
+**Minimum Transfer**: $0.01 USD
+
+**Best For**:
+- Operations requiring USDT specifically
+- Ethereum mainnet high-value transfers
+- Multi-token portfolio support
+
+**Note**: Not available on Base (use USDC instead)
+
+---
+
+### PYUSD (PayPal USD)
+
+**Issuer**: PayPal  
+**Decimals**: 6  
+**Peg**: 1:1 USD  
+**Contract Addresses**:
+
+```python
+"ethereum": "0x6c3ea9036406852006290770BEdFcAbA0e23A0e8"
+```
+
+**Verification Links**:
+- Ethereum: [View on Etherscan](https://etherscan.io/token/0x6c3ea9036406852006290770BEdFcAbA0e23A0e8)
+
+**Minimum Transfer**: $0.01 USD
+
+**Best For**:
+- PayPal ecosystem integration
+- Ethereum mainnet operations
+- Merchant acceptance where PayPal stablecoins preferred
+
+**Limitations**: Ethereum mainnet only (no L2 support yet)
+
+---
+
+### EURC (Euro Coin)
+
+**Issuer**: Circle  
+**Decimals**: 6  
+**Peg**: 1:1 EUR  
+**Peg Ratio**: 1.08 EUR/USD (configurable)  
+**Contract Addresses**:
+
+```python
+"base": "0x60a3E35Cc302bFA44Cb288Bc5a4F316Fdb1adb42"
+"ethereum": "0x1aBaEA1f7C830bD89Acc67eC4af516284b1bC33c"
+"polygon": "0x9912af6da4F87Fc2b0Ae0B77A124e9B1B7Ba2F70"
+"arc_testnet": "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a"
+```
+
+**Verification Links**:
+- Base: [View on Basescan](https://basescan.org/token/0x60a3E35Cc302bFA44Cb288Bc5a4F316Fdb1adb42)
+- Ethereum: [View on Etherscan](https://etherscan.io/token/0x1aBaEA1f7C830bD89Acc67eC4af516284b1bC33c)
+
+**Minimum Transfer**: €0.01 EUR (~$0.01 USD)
+
+**Best For**:
+- European merchant payments
+- EUR-denominated agent wallets
+- Cross-currency operations
+
+**USD Conversion**: Sardis automatically converts EURC to USD equivalent using configurable peg ratio
+
+```python
+# Automatic EUR to USD conversion
+token = get_token_metadata(TokenType.EURC)
+amount_eur = Decimal("100")
+amount_usd = token.to_usd(amount_eur)  # Returns ~$108 USD
+```
+
+---
+
+## Token by Chain Matrix
+
+| Chain | USDC | USDT | PYUSD | EURC |
+|-------|------|------|-------|------|
+| **Base** | ✅ | ❌ | ❌ | ✅ |
+| **Ethereum** | ✅ | ✅ | ✅ | ✅ |
+| **Polygon** | ✅ | ✅ | ❌ | ✅ |
+| **Arbitrum** | ✅ | ✅ | ❌ | ❌ |
+| **Optimism** | ✅ | ✅ | ❌ | ❌ |
+| **Arc Testnet** | ✅ | ❌ | ❌ | ✅ |
+
+**Query Tokens by Chain**:
+
+```python
+from sardis_v2_core.tokens import get_tokens_for_chain
+
+# Get all active tokens for Base
+base_tokens = get_tokens_for_chain("base")
+# Returns: [TokenType.USDC, TokenType.EURC]
+
+# Get all active tokens for Ethereum
+eth_tokens = get_tokens_for_chain("ethereum")
+# Returns: [TokenType.USDC, TokenType.USDT, TokenType.PYUSD, TokenType.EURC]
+```
+
+**Implementation**: `packages/sardis-core/src/sardis_v2_core/tokens.py:117-118`
+
+---
+
+## Token Metadata API
+
+### Get Token Information
+
+```python
+from sardis_v2_core.tokens import (
+    get_token_metadata,
+    get_supported_tokens,
+    get_tokens_for_chain,
+    TokenType,
+)
+
+# Get metadata for a specific token
+usdc = get_token_metadata(TokenType.USDC)
+print(usdc.symbol)  # "USDC"
+print(usdc.decimals)  # 6
+print(usdc.issuer)  # "Circle"
+
+# Get contract address for specific chain
+base_usdc = usdc.contract_addresses["base"]
+# "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+
+# Get all supported tokens
+all_tokens = get_supported_tokens()
+# [TokenType.USDC, TokenType.USDT, TokenType.PYUSD, TokenType.EURC]
+
+# Get tokens available on a specific chain
+polygon_tokens = get_tokens_for_chain("polygon")
+# [TokenType.USDC, TokenType.USDT, TokenType.EURC]
+```
+
+### Amount Normalization
+
+```python
+from decimal import Decimal
+from sardis_v2_core.tokens import (
+    normalize_token_amount,
+    to_raw_token_amount,
+    TokenType,
+)
+
+# Convert raw amount (on-chain) to decimal
+raw_amount = 1_000_000  # 1 USDC (6 decimals)
+normalized = normalize_token_amount(TokenType.USDC, raw_amount)
+print(normalized)  # Decimal('1.0')
+
+# Convert decimal to raw amount
+user_amount = Decimal("123.45")
+raw = to_raw_token_amount(TokenType.USDC, user_amount)
+print(raw)  # 123_450_000
+
+# Using token metadata directly
+token = get_token_metadata(TokenType.USDC)
+token.normalize_amount(5_500_000)  # Decimal('5.5')
+token.to_raw_amount(Decimal("10.25"))  # 10_250_000
+```
+
+**Implementation**: `packages/sardis-core/src/sardis_v2_core/tokens.py:32-43`
+
+### USD Conversion
+
+```python
+from sardis_v2_core.tokens import get_token_metadata, TokenType
+from decimal import Decimal
+
+# USDC (1:1 peg)
+usdc = get_token_metadata(TokenType.USDC)
+usdc.to_usd(Decimal("100"))  # Decimal('100.0')
+
+# EURC (1.08 EUR/USD peg)
+eurc = get_token_metadata(TokenType.EURC)
+eurc.to_usd(Decimal("100"))  # Decimal('108.0')
+```
+
+**Implementation**: `packages/sardis-core/src/sardis_v2_core/tokens.py:40-43`
+
+---
+
+## Token Selection Guide
+
+### By Use Case
+
+**AI Agent Payments (Recommended: USDC)**
+- Reasons:
+  - Supported on all chains
+  - Lowest gas fees on Base/Optimism
+  - Circle CCTP for fast bridging
+  - Native gas on Arc Testnet
+
+**Multi-Token Portfolio (Recommended: Ethereum or Polygon)**
+- Reasons:
+  - Ethereum: All 4 tokens (USDC, USDT, PYUSD, EURC)
+  - Polygon: 3 tokens (USDC, USDT, EURC)
+  - High liquidity for conversions
+
+**European Operations (Recommended: EURC on Base)**
+- Reasons:
+  - Native EUR peg (no USD conversion for merchants)
+  - Low gas fees on Base
+  - Circle issuer (same as USDC)
+
+**PayPal Integration (Required: PYUSD on Ethereum)**
+- Reasons:
+  - Only available on Ethereum mainnet
+  - Direct PayPal ecosystem integration
+  - Growing merchant acceptance
+
+### By Chain
+
+**Base** → Use **USDC** (primary) or **EURC** (EUR operations)
+- Lowest gas fees
+- Fast finality (2s blocks)
+- Best for high-frequency agent operations
+
+**Ethereum** → Any token (maximum flexibility)
+- All 4 stablecoins supported
+- Highest liquidity
+- Best for large transfers (> $10k)
+
+**Polygon** → **USDC** (primary) or **USDT**/**EURC** (secondary)
+- Lower gas than Ethereum
+- Good token selection
+- MATIC for gas (keep small balance)
+
+**Arbitrum/Optimism** → **USDC** (primary) or **USDT** (secondary)
+- Ultra-low gas fees
+- Fast finality
+- No EURC support
+
+---
+
+## Token Configuration in Wallets
+
+Sardis wallets are configured with token allowlists via `SardisPolicyModule`:
+
+```solidity
+// contracts/src/SardisPolicyModule.sol:278-283
+function allowToken(
+    address safe,
+    address token
+) external onlySardis walletInitialized(safe) {
+    require(token != address(0), "Invalid token");
+    allowedTokens[safe][token] = true;
+    emit TokenAllowed(safe, token);
+}
+```
+
+By default, Sardis enforces stablecoin-only policies:
+
+```solidity
+// Only allow transfers of approved tokens
+if (policy.enforceTokenAllowlist) {
+    require(allowedTokens[safe][to], "Token not allowed");
+}
+```
+
+**See**: [Smart Contracts](/blockchain/smart-contracts) for policy enforcement details.
+
+---
+
+## Chain-Specific Token Notes
+
+### Base
+- **No USDT**: Base ecosystem strongly prefers USDC
+- **EURC Available**: One of few L2s with native EURC support
+- **Recommendation**: Default to USDC for all operations
+
+### Polygon
+- **Bridged USDC**: Polygon uses bridged USDC (different address than native)
+- **USDT Popular**: Large USDT liquidity on Polygon
+- **MATIC Required**: Keep small MATIC balance for gas
+
+### Ethereum
+- **All Tokens**: Only chain supporting all 4 stablecoins
+- **High Gas**: Use for large transfers only (> $10k)
+- **USDT Non-Standard**: Ethereum USDT uses non-standard ERC-20 (no return values)
+
+### Arbitrum/Optimism
+- **USDC/USDT Only**: No EURC or PYUSD support
+- **Low Gas**: Excellent for high-frequency operations
+- **Fast Finality**: 1-2s blocks
+
+### Arc Testnet
+- **USDC-Native Gas**: First chain with USDC as native gas token
+- **EURC Support**: Test EUR-denominated operations
+- **Testnet Only**: Not for production use
+
+---
+
+## Decimal Precision
+
+All Sardis-supported stablecoins use **6 decimals**:
+
+```python
+# All tokens have 6 decimal places
+for token in TOKEN_REGISTRY.values():
+    assert token.decimals == 6
+
+# 1 token unit = 1,000,000 smallest units
+1.0 USDC = 1_000_000 (on-chain)
+0.01 USDC = 10_000 (on-chain)
+```
+
+**Precision Limits**:
+- Minimum: $0.000001 (1 micro-unit)
+- Maximum: $999,999,999,999.999999
+- Recommended minimum transfer: $0.01
+
+---
+
+## Token Registry Structure
+
+```python
+# packages/sardis-core/src/sardis_v2_core/tokens.py:18-44
+@dataclass(slots=True)
+class TokenMetadata:
+    symbol: str
+    name: str
+    decimals: int
+    issuer: str
+    peg_currency: str = "USD"
+    peg_ratio: Decimal = Decimal("1.0")
+    contract_addresses: dict[str, str] = field(default_factory=dict)
+    min_transfer_amount: Decimal = Decimal("0.01")
+    is_active: bool = True
+
+    def normalize_amount(self, raw_amount: int) -> Decimal:
+        """Convert on-chain amount to decimal."""
+        return Decimal(raw_amount) / Decimal(10**self.decimals)
+
+    def to_raw_amount(self, amount: Decimal) -> int:
+        """Convert decimal amount to on-chain units."""
+        return int(amount * Decimal(10**self.decimals))
+
+    def to_usd(self, amount: Decimal) -> Decimal:
+        """Convert amount to USD equivalent."""
+        if self.peg_currency == "USD":
+            return amount
+        return amount * self.peg_ratio
+```
+
+---
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Supported Chains" icon="link" href="/blockchain/supported-chains">
+    RPC endpoints and chain configurations
+  </Card>
+  <Card title="Smart Contracts" icon="file-contract" href="/blockchain/smart-contracts">
+    Token allowlist enforcement via SardisPolicyModule
+  </Card>
+  <Card title="Gas Optimization" icon="gauge-high" href="/blockchain/gas-optimization">
+    Choose optimal chain/token for lowest fees
+  </Card>
+</CardGroup>

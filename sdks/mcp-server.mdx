@@ -1,0 +1,394 @@
+---
+title: MCP Server
+description: Model Context Protocol server for Claude Desktop and Cursor integration
+---
+
+# Sardis MCP Server
+
+The Sardis MCP (Model Context Protocol) server enables AI agents running in Claude Desktop, Cursor, and other MCP-compatible clients to execute secure payments with built-in policy validation.
+
+## What is MCP?
+
+MCP (Model Context Protocol) is an open protocol that standardizes how AI assistants communicate with external tools and data sources. The Sardis MCP server exposes payment capabilities as tools that can be safely used by AI agents.
+
+## Installation
+
+```bash
+npm install -g @sardis/mcp-server
+```
+
+Or use npx without installation:
+
+```bash
+npx @sardis/mcp-server
+```
+
+## Claude Desktop Configuration
+
+Add Sardis to your Claude Desktop configuration:
+
+### macOS
+
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "sardis": {
+      "command": "npx",
+      "args": ["-y", "@sardis/mcp-server"],
+      "env": {
+        "SARDIS_API_KEY": "sk_live_...",
+        "SARDIS_WALLET_ID": "wallet_...",
+        "SARDIS_MODE": "live"
+      }
+    }
+  }
+}
+```
+
+### Windows
+
+Edit `%APPDATA%\Claude\claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "sardis": {
+      "command": "npx",
+      "args": ["-y", "@sardis/mcp-server"],
+      "env": {
+        "SARDIS_API_KEY": "sk_live_...",
+        "SARDIS_WALLET_ID": "wallet_...",
+        "SARDIS_MODE": "live"
+      }
+    }
+  }
+}
+```
+
+### Simulation Mode (No API Key Required)
+
+For testing without real transactions:
+
+```json
+{
+  "mcpServers": {
+    "sardis": {
+      "command": "npx",
+      "args": ["-y", "@sardis/mcp-server"],
+      "env": {
+        "SARDIS_MODE": "simulated"
+      }
+    }
+  }
+}
+```
+
+## Cursor Configuration
+
+Add Sardis to Cursor's MCP settings:
+
+1. Open Cursor Settings (Cmd+, on Mac, Ctrl+, on Windows)
+2. Navigate to Features → MCP
+3. Add new MCP server:
+
+```json
+{
+  "sardis": {
+    "command": "npx",
+    "args": ["-y", "@sardis/mcp-server"],
+    "env": {
+      "SARDIS_API_KEY": "sk_live_...",
+      "SARDIS_WALLET_ID": "wallet_...",
+      "SARDIS_MODE": "live"
+    }
+  }
+}
+```
+
+## Environment Variables
+
+| Variable | Required | Description | Default |
+|----------|----------|-------------|----------|
+| `SARDIS_API_KEY` | Yes (live mode) | Your Sardis API key | - |
+| `SARDIS_WALLET_ID` | Recommended | Default wallet ID | - |
+| `SARDIS_AGENT_ID` | Optional | Agent ID for attribution | - |
+| `SARDIS_MODE` | Optional | `live` or `simulated` | `simulated` |
+| `SARDIS_API_URL` | Optional | API base URL | `https://api.sardis.sh` |
+| `SARDIS_CHAIN` | Optional | Default blockchain | `base_sepolia` |
+| `SARDIS_POLICY_BLOCKED_VENDORS` | Optional | Comma-separated blocked vendors | - |
+| `SARDIS_POLICY_ALLOWED_VENDORS` | Optional | Comma-separated allowed vendors | - |
+| `SARDIS_REQUIRE_EXPLICIT_APPROVAL` | Optional | Require vendor approval | `false` |
+
+## Available Tools
+
+The MCP server exposes 50+ tools across multiple categories:
+
+### Wallet Operations
+
+- `sardis_get_wallet` - Get wallet information
+- `sardis_get_balance` - Check wallet balance and limits
+- `sardis_create_wallet` - Create a new wallet
+- `sardis_list_wallets` - List all wallets
+
+### Payment Operations
+
+- `sardis_pay` - Execute a payment
+- `sardis_get_transaction` - Get transaction details
+- `sardis_list_transactions` - List transaction history
+
+### Hold Operations (Pre-Authorization)
+
+- `sardis_create_hold` - Create a payment hold
+- `sardis_capture_hold` - Capture (settle) a hold
+- `sardis_void_hold` - Cancel a hold
+- `sardis_release_hold` - Release hold funds
+- `sardis_get_hold` - Get hold details
+- `sardis_list_holds` - List all holds
+- `sardis_extend_hold` - Extend hold expiration
+
+### Policy & Guardrails
+
+- `sardis_check_policy` - Validate payment against policy
+- `sardis_validate_limits` - Check spending limits
+- `sardis_check_compliance` - Run compliance checks
+- `sardis_get_policies` - List active policies
+
+### Agent Management
+
+- `sardis_create_agent` - Create a new agent
+- `sardis_get_agent` - Get agent details
+- `sardis_list_agents` - List all agents
+- `sardis_update_agent` - Update agent information
+
+### Group Management
+
+- `sardis_create_group` - Create agent group
+- `sardis_get_group` - Get group details
+- `sardis_list_groups` - List all groups
+- `sardis_add_agent_to_group` - Add agent to group
+- `sardis_remove_agent_from_group` - Remove agent from group
+- `sardis_get_group_spending` - Get group spending summary
+
+### Virtual Cards
+
+- `sardis_issue_card` - Issue a virtual card
+- `sardis_create_card` - Create a card
+- `sardis_get_card` - Get card details
+- `sardis_list_cards` - List all cards
+- `sardis_freeze_card` - Freeze a card
+- `sardis_unfreeze_card` - Unfreeze a card
+- `sardis_cancel_card` - Cancel a card
+
+### Fiat Operations
+
+- `sardis_fund_wallet` - Add funds via ACH
+- `sardis_withdraw_to_bank` - Withdraw to bank account
+- `sardis_withdraw` - Withdraw funds
+- `sardis_get_funding_status` - Check funding status
+- `sardis_get_withdrawal_status` - Check withdrawal status
+- `sardis_list_funding_transactions` - List funding history
+
+### Approval Workflows
+
+- `sardis_request_approval` - Request payment approval
+- `sardis_get_approval_status` - Check approval status
+- `sardis_check_approval` - Verify approval
+- `sardis_list_pending_approvals` - List pending approvals
+- `sardis_cancel_approval` - Cancel approval request
+
+### Spending Analytics
+
+- `sardis_get_spending_summary` - Get spending overview
+- `sardis_get_spending` - Get detailed spending
+- `sardis_get_spending_by_vendor` - Spending by vendor
+- `sardis_get_spending_by_category` - Spending by category
+- `sardis_get_spending_trends` - Analyze spending trends
+
+### Sandbox & Testing
+
+- `sardis_sandbox_demo` - Interactive sandbox demo
+
+## Usage Examples
+
+### In Claude Desktop
+
+Once configured, you can ask Claude to make payments:
+
+```
+You: Pay $50 to OpenAI for API usage
+
+Claude: I'll help you make that payment. Let me first check the policy 
+and balance.
+
+[Uses sardis_check_policy and sardis_get_balance]
+
+The payment is within your limits. I'll proceed with the payment.
+
+[Uses sardis_pay]
+
+Payment successful! Transaction hash: 0x123...
+```
+
+### Policy Validation Example
+
+```
+You: Can I spend $500 on AWS?
+
+Claude: Let me check your spending limits.
+
+[Uses sardis_validate_limits]
+
+Yes, you have $750 remaining in your daily limit. The $500 payment 
+to AWS would be approved.
+```
+
+### Hold Example (Hotel Booking)
+
+```
+You: Create a $200 hold for my hotel booking
+
+Claude: I'll create a pre-authorization hold.
+
+[Uses sardis_create_hold]
+
+Hold created successfully:
+- Hold ID: hold_abc123
+- Amount: $200 USDC
+- Expires: In 24 hours
+- Status: Active
+
+When you check out, I can capture the final amount or void the hold 
+if you cancel.
+```
+
+### Group Spending Example
+
+```
+You: How much has my AI research team spent today?
+
+Claude: Let me check the group spending.
+
+[Uses sardis_get_group_spending]
+
+AI Research Team spending today:
+- Total spent: $2,450 / $5,000 daily limit
+- Remaining: $2,550
+- Transactions: 18
+- Active agents: 5
+```
+
+## Prompt Templates
+
+The MCP server provides built-in prompts:
+
+### `pay-vendor`
+
+Make a payment with policy validation:
+
+```
+Arguments:
+- vendor: Vendor name (e.g., openai, anthropic)
+- amount: Amount in USD
+- purpose: Payment purpose (optional)
+```
+
+### `check-balance`
+
+Check wallet balance and spending limits:
+
+```
+No arguments required
+```
+
+### `sandbox-tour`
+
+Guided tour of Sardis capabilities:
+
+```
+Arguments:
+- category: Focus area (quickstart, payments, cards, policy, holds, fiat, or all)
+```
+
+## Resources
+
+The MCP server exposes resources for context:
+
+- `sardis://wallet/balance` - Current wallet balance and limits
+- `sardis://wallet/info` - Wallet configuration
+- `sardis://config` - Server configuration status
+- `sardis://tools` - List of available tools
+
+## Security Features
+
+### Rate Limiting
+
+Per-tool rate limits prevent abuse:
+
+- Payment operations: 5 calls/minute
+- Wallet mutations: 3 calls/minute
+- Hold operations: 10 calls/minute
+- Read operations: 60 calls/minute
+
+### Policy Enforcement
+
+All payment operations go through policy validation:
+
+1. Check spending limits
+2. Validate vendor/recipient
+3. Run compliance checks
+4. Verify wallet balance
+
+### Audit Trail
+
+All operations are logged with:
+- Timestamp
+- Tool name
+- Arguments
+- Result
+- Request ID
+
+## Troubleshooting
+
+### Server Not Appearing in Claude
+
+1. Check config file location
+2. Verify JSON syntax
+3. Restart Claude Desktop
+4. Check Claude logs: `~/Library/Logs/Claude/mcp*.log`
+
+### "API Key Not Configured" Error
+
+1. Verify `SARDIS_API_KEY` in config
+2. Check API key format (starts with `sk_`)
+3. Ensure no extra spaces or quotes
+
+### "Wallet Not Found" Error
+
+1. Set `SARDIS_WALLET_ID` environment variable
+2. Create a wallet first using `sardis_create_wallet`
+3. Use simulation mode for testing
+
+### Rate Limit Exceeded
+
+1. Check rate limit window (1 minute)
+2. Reduce request frequency
+3. Contact support for higher limits
+
+## Development
+
+Run the MCP server locally:
+
+```bash
+git clone https://github.com/sardis-pay/sardis.git
+cd sardis/packages/sardis-mcp-server
+pnpm install
+pnpm dev
+```
+
+## Support
+
+- Documentation: https://sardis.sh/docs
+- GitHub Issues: https://github.com/sardis-pay/sardis/issues
+- Email: support@sardis.sh

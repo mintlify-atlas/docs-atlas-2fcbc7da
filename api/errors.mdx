@@ -1,0 +1,452 @@
+---
+title: 'Error Codes'
+description: 'Understand and handle Sardis API errors'
+---
+
+## Error Response Format
+
+All errors return a consistent JSON structure:
+
+```json
+{
+  "error": {
+    "code": "insufficient_balance",
+    "message": "Wallet balance too low for this transaction",
+    "details": {
+      "wallet_id": "wallet_abc123",
+      "required": "100.00",
+      "available": "50.00",
+      "currency": "USDC"
+    }
+  }
+}
+```
+
+## HTTP Status Codes
+
+| Status Code | Meaning |
+|------------|----------|
+| `200` | Success - Request completed successfully |
+| `201` | Created - Resource was created |
+| `204` | No Content - Success with no response body |
+| `400` | Bad Request - Invalid request parameters |
+| `401` | Unauthorized - Invalid or missing API key |
+| `403` | Forbidden - Valid authentication but insufficient permissions |
+| `404` | Not Found - Resource doesn't exist |
+| `409` | Conflict - Resource already exists or state conflict |
+| `422` | Unprocessable Entity - Valid syntax but semantic errors |
+| `429` | Too Many Requests - Rate limit exceeded |
+| `500` | Internal Server Error - Server error |
+| `503` | Service Unavailable - Temporary service disruption |
+
+## Common Error Codes
+
+### Authentication Errors
+
+#### `unauthorized`
+Invalid or missing API key.
+
+```json
+{
+  "error": {
+    "code": "unauthorized",
+    "message": "Invalid API key"
+  }
+}
+```
+
+**Resolution:** Check your API key in the Authorization header.
+
+#### `forbidden`
+Valid API key but insufficient permissions.
+
+```json
+{
+  "error": {
+    "code": "forbidden",
+    "message": "Access denied"
+  }
+}
+```
+
+**Resolution:** Verify you have permission to access this resource.
+
+### Resource Errors
+
+#### `not_found`
+Requested resource doesn't exist.
+
+```json
+{
+  "error": {
+    "code": "not_found",
+    "message": "Agent not found",
+    "details": {
+      "agent_id": "agent_xyz789"
+    }
+  }
+}
+```
+
+**Resolution:** Check the resource ID is correct.
+
+#### `already_exists`
+Resource with this identifier already exists.
+
+```json
+{
+  "error": {
+    "code": "already_exists",
+    "message": "Wallet already exists",
+    "details": {
+      "wallet_id": "wallet_abc123"
+    }
+  }
+}
+```
+
+**Resolution:** Use a different identifier or update the existing resource.
+
+### Payment Errors
+
+#### `insufficient_balance`
+Wallet doesn't have enough funds.
+
+```json
+{
+  "error": {
+    "code": "insufficient_balance",
+    "message": "Wallet balance too low for this transaction",
+    "details": {
+      "wallet_id": "wallet_abc123",
+      "required": "100.00",
+      "available": "50.00",
+      "currency": "USDC"
+    }
+  }
+}
+```
+
+**Resolution:** Fund the wallet or reduce the transaction amount.
+
+#### `policy_denied`
+Transaction blocked by spending policy.
+
+```json
+{
+  "error": {
+    "code": "policy_denied",
+    "message": "Transaction exceeds daily spending limit",
+    "details": {
+      "policy_id": "pol_abc123",
+      "reason": "daily_limit_exceeded",
+      "daily_limit": "1000.00",
+      "spent_today": "950.00",
+      "requested": "100.00"
+    }
+  }
+}
+```
+
+**Resolution:** Wait for limits to reset or request approval.
+
+#### `compliance_check_failed`
+Transaction failed KYC/AML screening.
+
+```json
+{
+  "error": {
+    "code": "compliance_check_failed",
+    "message": "Transaction blocked by compliance screening",
+    "details": {
+      "reason": "sanctioned_address"
+    }
+  }
+}
+```
+
+**Resolution:** Contact support if you believe this is an error.
+
+#### `wallet_frozen`
+Wallet is frozen and cannot make transactions.
+
+```json
+{
+  "error": {
+    "code": "wallet_frozen",
+    "message": "Wallet is frozen",
+    "details": {
+      "wallet_id": "wallet_abc123",
+      "frozen_at": "2025-03-01T10:00:00Z",
+      "reason": "Suspicious activity detected"
+    }
+  }
+}
+```
+
+**Resolution:** Contact support to unfreeze the wallet.
+
+### Validation Errors
+
+#### `invalid_parameter`
+Request parameter is invalid.
+
+```json
+{
+  "error": {
+    "code": "invalid_parameter",
+    "message": "Invalid amount",
+    "details": {
+      "parameter": "amount",
+      "value": "-10.00",
+      "constraint": "must be greater than 0"
+    }
+  }
+}
+```
+
+**Resolution:** Fix the parameter value.
+
+#### `missing_parameter`
+Required parameter is missing.
+
+```json
+{
+  "error": {
+    "code": "missing_parameter",
+    "message": "Missing required parameter",
+    "details": {
+      "parameter": "wallet_id"
+    }
+  }
+}
+```
+
+**Resolution:** Include the required parameter.
+
+#### `unsupported_token`
+Token not supported on this chain.
+
+```json
+{
+  "error": {
+    "code": "unsupported_token",
+    "message": "Token PYUSD not supported on base",
+    "details": {
+      "token": "PYUSD",
+      "chain": "base",
+      "supported_tokens": ["USDC", "EURC"]
+    }
+  }
+}
+```
+
+**Resolution:** Use a supported token or different chain.
+
+### Rate Limit Errors
+
+#### `rate_limit_exceeded`
+Too many requests.
+
+```json
+{
+  "error": {
+    "code": "rate_limit_exceeded",
+    "message": "Rate limit exceeded",
+    "details": {
+      "limit": 100,
+      "window": "1 minute",
+      "retry_after": 45
+    }
+  }
+}
+```
+
+**Response Headers:**
+```
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1709467200
+Retry-After: 45
+```
+
+**Resolution:** Wait `retry_after` seconds before retrying.
+
+### Blockchain Errors
+
+#### `chain_error`
+Blockchain transaction failed.
+
+```json
+{
+  "error": {
+    "code": "chain_error",
+    "message": "Transaction failed on chain",
+    "details": {
+      "chain": "base",
+      "tx_hash": "0x123...",
+      "reason": "gas_too_low"
+    }
+  }
+}
+```
+
+**Resolution:** Retry with higher gas or check chain status.
+
+#### `insufficient_gas`
+Not enough native token for gas.
+
+```json
+{
+  "error": {
+    "code": "insufficient_gas",
+    "message": "Insufficient ETH for gas",
+    "details": {
+      "chain": "base",
+      "required_eth": "0.001",
+      "available_eth": "0.0005"
+    }
+  }
+}
+```
+
+**Resolution:** Fund wallet with native token (ETH).
+
+### Service Errors
+
+#### `internal_error`
+Unexpected server error.
+
+```json
+{
+  "error": {
+    "code": "internal_error",
+    "message": "An unexpected error occurred",
+    "details": {
+      "request_id": "req_abc123"
+    }
+  }
+}
+```
+
+**Resolution:** Retry with exponential backoff. Contact support if persists.
+
+#### `service_unavailable`
+Service temporarily unavailable.
+
+```json
+{
+  "error": {
+    "code": "service_unavailable",
+    "message": "Service temporarily unavailable",
+    "details": {
+      "retry_after": 60
+    }
+  }
+}
+```
+
+**Resolution:** Retry after the specified time.
+
+## Error Handling Best Practices
+
+### Retry Logic
+
+Implement exponential backoff for transient errors:
+
+```python
+import time
+from sardis_sdk import SardisClient
+from sardis_sdk.exceptions import SardisAPIError
+
+client = SardisClient(api_key="sk_live_your_api_key")
+
+def transfer_with_retry(wallet_id, destination, amount, max_retries=3):
+    for attempt in range(max_retries):
+        try:
+            return client.wallets.transfer(
+                wallet_id=wallet_id,
+                destination=destination,
+                amount=amount,
+                token="USDC",
+                chain="base"
+            )
+        except SardisAPIError as e:
+            if e.code in ["rate_limit_exceeded", "service_unavailable"]:
+                if attempt < max_retries - 1:
+                    wait_time = (2 ** attempt) + (e.retry_after or 0)
+                    time.sleep(wait_time)
+                    continue
+            raise
+```
+
+### Logging
+
+Log error details for debugging:
+
+```python
+import logging
+
+logger = logging.getLogger(__name__)
+
+try:
+    tx = client.wallets.transfer(...)
+except SardisAPIError as e:
+    logger.error(
+        "Transfer failed",
+        extra={
+            "error_code": e.code,
+            "error_message": e.message,
+            "wallet_id": wallet_id,
+            "request_id": e.request_id
+        }
+    )
+    raise
+```
+
+### User-Friendly Messages
+
+Translate error codes to user-friendly messages:
+
+```python
+ERROR_MESSAGES = {
+    "insufficient_balance": "Your wallet doesn't have enough funds for this purchase.",
+    "policy_denied": "This transaction exceeds your spending limits.",
+    "compliance_check_failed": "This transaction cannot be completed. Please contact support.",
+    "rate_limit_exceeded": "Too many requests. Please try again in a moment.",
+}
+
+def get_user_message(error_code):
+    return ERROR_MESSAGES.get(error_code, "An unexpected error occurred. Please try again.")
+```
+
+## Webhook Error Events
+
+Errors during payment processing trigger webhook events:
+
+```json
+{
+  "event": "payment.failed",
+  "data": {
+    "tx_id": "tx_abc123",
+    "wallet_id": "wallet_abc123",
+    "amount": "100.00",
+    "error": {
+      "code": "policy_denied",
+      "message": "Transaction exceeds daily spending limit"
+    }
+  },
+  "created_at": "2025-03-03T10:00:00Z"
+}
+```
+
+See [Webhooks](/api/webhooks) for more information.
+
+## Getting Help
+
+If you encounter an error you can't resolve:
+
+1. Check this documentation for the error code
+2. Search our [knowledge base](https://help.sardis.sh)
+3. Contact support with the `request_id` from the error response
+4. Check [status page](https://status.sardis.sh) for service incidents

@@ -1,0 +1,481 @@
+---
+title: Making Payments
+description: Execute payments from agent wallets with policy enforcement
+---
+
+Once you have a funded wallet with a spending policy, your AI agent can make payments. Sardis handles policy enforcement, on-chain execution, and error handling automatically.
+
+## Basic Payment Flow
+
+<Steps>
+  <Step title="Execute a Payment">
+    ```python
+    from sardis import SardisClient
+    
+    client = SardisClient(api_key="sk_...")
+    
+    # Get your wallet
+    wallet = client.wallets.get(wallet_id="wallet_abc123")
+    
+    # Make a payment
+    result = wallet.pay(
+        to="openai.com",
+        amount=25.00,
+        token="USDC",
+        description="GPT-4 API calls"
+    )
+    
+    print(f"Transaction ID: {result.tx_id}")
+    print(f"Status: {result.status}")
+    print(f"TX Hash: {result.tx_hash}")
+    ```
+  </Step>
+
+  <Step title="Check Payment Status">
+    ```python
+    if result.success:
+        print(f"✓ Payment successful!")
+        print(f"Remaining balance: ${wallet.balance}")
+    else:
+        print(f"✗ Payment failed: {result.message}")
+        print(f"Reason: {result.policy_result.reason}")
+    ```
+  </Step>
+
+  <Step title="Handle Policy Rejections">
+    If the payment violates policy, you'll get detailed feedback:
+    
+    ```python
+    if result.status == "rejected":
+        print(f"Policy violation: {result.policy_result.reason}")
+        print(f"Checks failed: {result.policy_result.checks_failed}")
+        
+        # Example: 'per_transaction_limit' or 'merchant_blocked'
+    ```
+  </Step>
+</Steps>
+
+## Policy Enforcement
+
+Every payment automatically goes through policy checks:
+
+```python
+from sardis import Wallet, Transaction, Policy
+from decimal import Decimal
+
+# Create wallet with policy
+wallet = Wallet(initial_balance=1000, currency="USDC")
+
+policy = Policy(
+    max_per_tx=100,
+    max_total=500,
+    allowed_merchants=["openai.com", "anthropic.com"]
+)
+
+# This payment will succeed
+tx1 = Transaction(
+    from_wallet=wallet,
+    to="openai.com",
+    amount=50,
+    policy=policy
+)
+result1 = tx1.execute()
+print(f"Payment 1: {result1.status}")  # executed
+
+# This payment will be rejected (exceeds per-tx limit)
+tx2 = Transaction(
+    from_wallet=wallet,
+    to="openai.com",
+    amount=150,
+    policy=policy
+)
+result2 = tx2.execute()
+print(f"Payment 2: {result2.status}")  # rejected
+print(f"Reason: {result2.message}")  # Exceeds per-transaction limit
+
+# This payment will be rejected (merchant not allowed)
+tx3 = Transaction(
+    from_wallet=wallet,
+    to="unknown-site.com",
+    amount=25,
+    policy=policy
+)
+result3 = tx3.execute()
+print(f"Payment 3: {result3.status}")  # rejected
+```
+
+## Error Handling
+
+Handle different payment failure scenarios:
+
+```python
+try:
+    result = wallet.pay(
+        to="merchant.com",
+        amount=100,
+        token="USDC"
+    )
+    
+    if result.success:
+        # Payment succeeded
+        log_transaction(result.tx_id, result.tx_hash)
+        
+    elif result.status == "rejected":
+        # Policy violation
+        handle_policy_violation(
+            reason=result.policy_result.reason,
+            amount=result.amount
+        )
+        
+    elif result.status == "pending_approval":
+        # Needs human approval
+        request_approval(
+            approval_id=result.approval_id,
+            amount=result.amount
+        )
+        
+    elif result.status == "failed":
+        # Execution failure (insufficient balance, network error, etc.)
+        retry_or_alert(
+            tx_id=result.tx_id,
+            reason=result.message
+        )
+        
+except Exception as e:
+    # Handle unexpected errors
+    logger.error(f"Payment error: {e}")
+    alert_team(str(e))
+```
+
+### Common Error Codes
+
+| Status | Reason | What to Do |
+|--------|--------|------------|
+| `rejected` | `per_transaction_limit` | Reduce amount or update policy |
+| `rejected` | `daily_limit` | Wait for daily limit to reset |
+| `rejected` | `merchant_blocked` | Remove from blocklist or change merchant |
+| `rejected` | `insufficient_balance` | Fund the wallet |
+| `failed` | `network_error` | Retry with exponential backoff |
+| `failed` | `invalid_address` | Verify recipient address |
+| `pending_approval` | `approval_threshold` | Wait for human approval |
+
+## Idempotency
+
+Sardis automatically handles idempotency to prevent duplicate payments:
+
+```python
+# Use idempotency key to ensure exactly-once execution
+result1 = wallet.pay(
+    to="merchant.com",
+    amount=100,
+    token="USDC",
+    idempotency_key="order-12345"
+)
+
+# Retry with same key (e.g., due to timeout)
+result2 = wallet.pay(
+    to="merchant.com",
+    amount=100,
+    token="USDC",
+    idempotency_key="order-12345"  # Same key
+)
+
+# result2 will return the same result as result1
+assert result1.tx_id == result2.tx_id
+print("Payment executed exactly once")
+```
+
+Idempotency keys:
+- Must be unique per payment intent
+- Valid for 24 hours
+- Automatically generated if not provided
+- Recommended for all production payments
+
+## Async Payments
+
+For high-throughput applications, use async payments:
+
+```python
+import asyncio
+from sardis import AsyncSardisClient
+
+client = AsyncSardisClient(api_key="sk_...")
+
+async def make_payment(wallet_id: str, amount: float, merchant: str):
+    wallet = await client.wallets.get(wallet_id)
+    result = await wallet.pay(
+        to=merchant,
+        amount=amount,
+        token="USDC"
+    )
+    return result
+
+# Execute multiple payments concurrently
+async def main():
+    payments = [
+        make_payment("wallet_1", 25, "openai.com"),
+        make_payment("wallet_2", 50, "anthropic.com"),
+        make_payment("wallet_3", 100, "aws.amazon.com"),
+    ]
+    
+    results = await asyncio.gather(*payments)
+    
+    for r in results:
+        print(f"TX {r.tx_id}: {r.status}")
+
+asyncio.run(main())
+```
+
+## Cross-Chain Payments
+
+Sardis automatically routes payments to the optimal chain:
+
+```python
+# Payment will use the best chain for the destination
+result = wallet.pay(
+    to="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+    amount=100,
+    token="USDC",
+    preferred_chain="base"  # Optional: prefer Base if available
+)
+
+print(f"Executed on chain: {result.chain}")
+print(f"Gas cost: ${result.gas_cost}")
+```
+
+### Chain Selection Logic
+
+1. If `preferred_chain` specified, use it
+2. If recipient is a smart contract, detect chain from address
+3. If recipient is a merchant, use merchant's preferred chain
+4. Otherwise, use wallet's default chain (lowest fees)
+
+## Batch Payments
+
+Execute multiple payments in one transaction:
+
+```python
+payments = [
+    {"to": "openai.com", "amount": 25, "token": "USDC"},
+    {"to": "anthropic.com", "amount": 50, "token": "USDC"},
+    {"to": "aws.amazon.com", "amount": 100, "token": "USDC"},
+]
+
+results = wallet.pay_batch(payments)
+
+for i, result in enumerate(results):
+    if result.success:
+        print(f"✓ Payment {i+1} succeeded: {result.tx_hash}")
+    else:
+        print(f"✗ Payment {i+1} failed: {result.message}")
+```
+
+Batch payments:
+- Execute atomically (all or nothing)
+- Save on gas costs (single transaction)
+- Still enforce policy per-payment
+- Return individual results for each payment
+
+## Transaction Receipts
+
+Get detailed transaction receipts:
+
+```python
+# Get transaction details
+tx = client.transactions.get(tx_id="tx_abc123")
+
+print(f"Amount: ${tx.amount} {tx.token}")
+print(f"From: {tx.from_address}")
+print(f"To: {tx.to_address}")
+print(f"Chain: {tx.chain}")
+print(f"Status: {tx.status}")
+print(f"Block: {tx.block_number}")
+print(f"Confirmations: {tx.confirmations}")
+print(f"Gas used: {tx.gas_used}")
+print(f"Gas cost: ${tx.gas_cost_usd}")
+print(f"Timestamp: {tx.timestamp}")
+
+# Get transaction events
+events = tx.events
+for event in events:
+    print(f"{event.timestamp}: {event.type}")
+```
+
+## Payment Monitoring
+
+Monitor payment status in real-time:
+
+```python
+import time
+
+# Submit payment
+result = wallet.pay(
+    to="merchant.com",
+    amount=100,
+    token="USDC"
+)
+
+print(f"Transaction submitted: {result.tx_id}")
+
+# Wait for confirmation
+while True:
+    tx = client.transactions.get(result.tx_id)
+    print(f"Status: {tx.status} ({tx.confirmations} confirmations)")
+    
+    if tx.status == "confirmed":
+        print("✓ Payment confirmed!")
+        break
+    elif tx.status == "failed":
+        print(f"✗ Payment failed: {tx.failure_reason}")
+        break
+    
+    time.sleep(5)  # Check every 5 seconds
+```
+
+Or use webhooks for async monitoring (see [Webhooks Guide](/guides/webhooks)).
+
+## Advanced: Payment Metadata
+
+Attach metadata to payments for tracking:
+
+```python
+result = wallet.pay(
+    to="merchant.com",
+    amount=100,
+    token="USDC",
+    metadata={
+        "order_id": "order-12345",
+        "customer_id": "cust-67890",
+        "product": "premium-subscription",
+        "tags": ["subscription", "monthly"]
+    }
+)
+
+# Retrieve metadata later
+tx = client.transactions.get(result.tx_id)
+print(f"Order ID: {tx.metadata['order_id']}")
+print(f"Product: {tx.metadata['product']}")
+```
+
+Metadata:
+- Stored on-chain and in Sardis ledger
+- Searchable via API
+- Included in webhooks
+- Max 1KB per transaction
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Payment fails with 'insufficient balance'">
+    Check on-chain balance vs. spending limits:
+    
+    ```python
+    # Check actual on-chain balance
+    balance = await wallet.get_balance(token="USDC")
+    print(f"On-chain balance: ${balance}")
+    
+    # Check spending limits
+    limits = wallet.get_spending_limits()
+    print(f"Remaining today: ${limits.remaining_daily}")
+    print(f"Remaining total: ${limits.remaining_total}")
+    ```
+    
+    If on-chain balance is sufficient but payment fails, check if you've exceeded daily/total spending limits.
+  </Accordion>
+
+  <Accordion title="Transaction stuck in 'pending' status">
+    Blockchain confirmations can take 10-60 seconds depending on the chain:
+    
+    - Base: ~2 seconds
+    - Polygon: ~3 seconds  
+    - Ethereum: ~12-15 seconds
+    - Arbitrum: ~1 second
+    - Optimism: ~2 seconds
+    
+    If stuck for >5 minutes, check:
+    
+    ```python
+    tx = client.transactions.get(result.tx_id)
+    print(f"Block explorer: {tx.explorer_url}")
+    print(f"Gas price: {tx.gas_price}")
+    ```
+    
+    Low gas price can cause delays. Contact support if stuck >15 minutes.
+  </Accordion>
+
+  <Accordion title="How to cancel a pending payment">
+    Payments cannot be cancelled once submitted to the blockchain. However, you can:
+    
+    1. **Before submission**: Don't call `execute()` or `pay()`
+    2. **After submission**: Wait for confirmation or failure
+    
+    For approval-required payments:
+    
+    ```python
+    # Reject pending approval
+    client.approvals.reject(
+        approval_id=result.approval_id,
+        reason="Payment no longer needed"
+    )
+    ```
+  </Accordion>
+
+  <Accordion title="Payment succeeded but recipient didn't receive funds">
+    Check transaction details:
+    
+    ```python
+    tx = client.transactions.get(result.tx_id)
+    print(f"To address: {tx.to_address}")
+    print(f"Amount: ${tx.amount} {tx.token}")
+    print(f"Chain: {tx.chain}")
+    print(f"Explorer: {tx.explorer_url}")
+    ```
+    
+    Common issues:
+    - Wrong chain (sent USDC on Base but recipient expects Ethereum)
+    - Wrong token (sent USDT instead of USDC)
+    - Wrong address (typo or wrong recipient)
+    
+    Use the block explorer URL to verify the transaction on-chain.
+  </Accordion>
+
+  <Accordion title="Rate limits and throughput">
+    Sardis API rate limits:
+    
+    - **Free tier**: 10 requests/second
+    - **Pro tier**: 100 requests/second
+    - **Enterprise**: Custom limits
+    
+    Implement retry with exponential backoff:
+    
+    ```python
+    from sardis import RetryConfig
+    
+    client = SardisClient(
+        api_key="sk_...",
+        retry_config=RetryConfig(
+            max_retries=3,
+            backoff_factor=2,
+            retry_statuses=[429, 500, 502, 503, 504]
+        )
+    )
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Webhooks" icon="webhook" href="/guides/webhooks">
+    Get notified of payment events
+  </Card>
+  <Card title="Agent-to-Agent" icon="users" href="/guides/agent-to-agent">
+    Enable agents to pay each other
+  </Card>
+  <Card title="Virtual Cards" icon="credit-card" href="/guides/virtual-cards">
+    Pay merchants that don't accept crypto
+  </Card>
+  <Card title="Testing" icon="flask" href="/guides/testing">
+    Test payments in sandbox mode
+  </Card>
+</CardGroup>

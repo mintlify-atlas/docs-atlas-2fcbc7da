@@ -1,0 +1,376 @@
+---
+title: Python SDK
+description: Official Sardis Python SDK for agent payments and policy enforcement
+---
+
+# Python SDK
+
+The Sardis Python SDK provides a simple, Pythonic interface for integrating Sardis payment capabilities into your AI agents and applications.
+
+## Installation
+
+### Quick Install (Simulation Mode)
+
+For prototyping and testing without API credentials:
+
+```bash
+pip install sardis
+```
+
+### Production Install
+
+For production use with full API access:
+
+```bash
+pip install sardis-sdk
+```
+
+Or with uv:
+
+```bash
+uv add sardis-sdk
+```
+
+## Quick Start
+
+### Simulation Mode
+
+Perfect for prototyping - no API key required, all operations run locally:
+
+```python
+from sardis import SardisClient
+
+# Create client (runs in simulation mode by default)
+client = SardisClient()
+
+# Create an agent
+agent = client.agents.create(name="my-agent")
+
+# Create a wallet with natural language policy
+wallet = client.wallets.create(
+    agent_id=agent.agent_id,
+    chain="base",
+    policy="Max $100 per transaction, daily limit $500"
+)
+
+# Execute a payment
+result = wallet.pay(
+    to="openai.com",
+    amount="25.00",
+    token="USDC",
+    purpose="API usage"
+)
+
+print(f"Payment {'succeeded' if result.success else 'failed'}")
+print(f"Balance: ${wallet.balance}")
+```
+
+### Production Mode
+
+For real transactions on mainnet/testnet:
+
+```python
+from sardis_sdk import SardisClient
+
+# Create client with API key
+client = SardisClient(
+    api_key="sk_live_...",
+    base_url="https://api.sardis.sh"  # Optional
+)
+
+# Create an agent
+agent = client.agents.create(
+    name="my-agent",
+    description="AI agent for automated payments"
+)
+
+# Create a wallet
+wallet = client.wallets.create(
+    agent_id=agent.agent_id,
+    mpc_provider="turnkey",
+    account_type="mpc_v1",
+    chain="base",
+    currency="USDC",
+    limit_per_tx=100.00,
+    limit_total=1000.00
+)
+
+# Execute a payment
+result = client.payments.send(
+    wallet_id=wallet.wallet_id,
+    to="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+    amount="50.00",
+    token="USDC",
+    memo="Payment for services"
+)
+
+print(f"Transaction hash: {result.tx_hash}")
+```
+
+## Client Initialization
+
+### Basic Configuration
+
+```python
+from sardis_sdk import SardisClient
+
+client = SardisClient(
+    api_key="sk_live_...",
+    base_url="https://api.sardis.sh",  # Optional, defaults to production
+)
+```
+
+### With Custom Retry Configuration
+
+```python
+from sardis_sdk import SardisClient, RetryConfig
+
+client = SardisClient(
+    api_key="sk_live_...",
+    retry=RetryConfig(
+        max_retries=5,
+        initial_delay=1.0,
+        max_delay=60.0,
+        exponential_base=2.0,
+        jitter=True
+    )
+)
+```
+
+### With Custom Timeout Configuration
+
+```python
+from sardis_sdk import SardisClient, TimeoutConfig
+
+client = SardisClient(
+    api_key="sk_live_...",
+    timeout=TimeoutConfig(
+        connect=10.0,  # Connection timeout in seconds
+        read=30.0,     # Read timeout in seconds
+        write=30.0,    # Write timeout in seconds
+        pool=10.0      # Pool timeout in seconds
+    )
+)
+```
+
+### Context Manager Pattern
+
+Recommended for automatic resource cleanup:
+
+```python
+from sardis_sdk import SardisClient
+
+with SardisClient(api_key="sk_live_...") as client:
+    agents = client.agents.list()
+    # Client will automatically close when exiting context
+```
+
+## Basic Operations
+
+### Agent Management
+
+```python
+# Create an agent
+agent = client.agents.create(
+    name="payment-bot",
+    description="Automated payment agent",
+    metadata={"version": "1.0", "environment": "production"}
+)
+
+# Get an agent
+agent = client.agents.get(agent_id="agent_123")
+
+# List agents
+agents = client.agents.list(limit=100)
+
+# Update agent
+agent = client.agents.update(
+    agent_id="agent_123",
+    name="updated-name",
+    description="Updated description"
+)
+```
+
+### Wallet Operations
+
+```python
+# Create a wallet
+wallet = client.wallets.create(
+    agent_id="agent_123",
+    mpc_provider="turnkey",
+    chain="base",
+    currency="USDC",
+    limit_per_tx=100.00,
+    limit_total=1000.00
+)
+
+# Get wallet
+wallet = client.wallets.get(wallet_id="wallet_123")
+
+# Get balance
+balance = client.wallets.get_balance(
+    wallet_id="wallet_123",
+    chain="base",
+    token="USDC"
+)
+print(f"Balance: {balance.balance} {balance.token}")
+print(f"Spent: {balance.spent_total}")
+print(f"Remaining: {balance.remaining}")
+
+# List wallets
+wallets = client.wallets.list(agent_id="agent_123", limit=50)
+
+# Transfer funds
+tx = client.wallets.transfer(
+    wallet_id="wallet_123",
+    destination="0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+    amount="100.00",
+    token="USDC",
+    chain="base",
+    memo="Transfer to external wallet"
+)
+```
+
+### Payment Execution
+
+```python
+# Send payment
+result = client.payments.send(
+    wallet_id="wallet_123",
+    to="merchant.eth",
+    amount="25.50",
+    token="USDC",
+    memo="Payment for API usage"
+)
+
+if result.success:
+    print(f"Payment sent: {result.tx_hash}")
+    print(f"Status: {result.status}")
+else:
+    print(f"Payment failed: {result.message}")
+```
+
+### Hold Operations (Pre-Authorization)
+
+```python
+# Create a hold
+hold = client.holds.create(
+    wallet_id="wallet_123",
+    amount="100.00",
+    token="USDC",
+    expires_in=3600,  # 1 hour
+    metadata={"order_id": "order_456"}
+)
+
+print(f"Hold created: {hold.hold_id}")
+print(f"Status: {hold.status}")
+
+# Capture the hold (settle the payment)
+capture = client.holds.capture(
+    hold_id=hold.hold_id,
+    amount="75.00",  # Can capture partial amount
+    memo="Final payment"
+)
+
+# Or void the hold (release funds)
+client.holds.void(hold_id=hold.hold_id)
+
+# Get hold details
+hold = client.holds.get(hold_id="hold_123")
+
+# List holds
+holds = client.holds.list(
+    wallet_id="wallet_123",
+    status="active",
+    limit=20
+)
+```
+
+### Group Management
+
+Manage multiple agents with shared budgets:
+
+```python
+# Create a group
+group = client.groups.create(
+    name="ai-research-team",
+    budget={
+        "per_transaction": "500.00",
+        "daily": "5000.00",
+        "monthly": "50000.00"
+    },
+    merchant_policy={
+        "blocked_categories": ["gambling", "adult"]
+    }
+)
+
+# Add agents to group
+client.groups.add_agent(group_id=group.group_id, agent_id="agent_123")
+client.groups.add_agent(group_id=group.group_id, agent_id="agent_456")
+
+# Get group spending
+spending = client.groups.get_spending(group_id=group.group_id)
+print(f"Daily spent: {spending['spending']['daily']}")
+print(f"Daily remaining: {spending['daily_remaining']}")
+print(f"Agent count: {spending['agent_count']}")
+```
+
+### Ledger Queries
+
+```python
+# List ledger entries
+entries = client.ledger.list(
+    wallet_id="wallet_123",
+    limit=50
+)
+
+for entry in entries:
+    print(f"{entry.timestamp}: {entry.amount} {entry.currency} to {entry.to_wallet}")
+
+# Filter by group
+group_entries = client.ledger.list(
+    group_id="group_123",
+    limit=100
+)
+```
+
+## Supported Chains & Tokens
+
+### Available Chains
+
+```python
+from sardis_sdk import Chain
+
+# Mainnet chains
+Chain.BASE          # Base (Coinbase L2)
+Chain.ETHEREUM      # Ethereum mainnet
+Chain.POLYGON       # Polygon PoS
+Chain.ARBITRUM      # Arbitrum One
+Chain.OPTIMISM      # Optimism
+
+# Testnet chains
+Chain.BASE_SEPOLIA  # Base Sepolia testnet
+```
+
+### Available Tokens
+
+```python
+from sardis_sdk import Token
+
+Token.USDC   # USD Coin
+Token.USDT   # Tether USD
+Token.EURC   # Euro Coin
+Token.PYUSD  # PayPal USD
+```
+
+## Error Handling
+
+See [Error Handling](/sdks/error-handling) for comprehensive error handling patterns.
+
+## Async Usage
+
+See [Async Patterns](/sdks/async-patterns) for async/await usage with `AsyncSardisClient`.
+
+## Full API Reference
+
+See [Python Reference](/sdks/python-reference) for complete API documentation.

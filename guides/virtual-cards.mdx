@@ -1,0 +1,528 @@
+---
+title: Virtual Cards
+description: Issue virtual debit cards for agent spending via Lithic
+---
+
+Sardis integrates with Lithic to issue virtual debit cards that agents can use to pay merchants that don't accept cryptocurrency. Cards are funded from agent wallets and enforce the same spending policies.
+
+## Why Virtual Cards?
+
+- **Merchant compatibility**: Pay any merchant that accepts Visa/Mastercard
+- **Same policies**: Card spending enforces wallet policies
+- **Instant issuance**: Cards created in less than 1 second
+- **Crypto-to-fiat bridge**: Automatically converts USDC to USD
+- **Full control**: Freeze, unfreeze, or cancel cards anytime
+
+## Issuing a Virtual Card
+
+<Steps>
+  <Step title="Create a Wallet">
+    First, create and fund a wallet:
+    
+    ```python
+    from sardis import SardisClient
+    
+    client = SardisClient(api_key="sk_...")
+    
+    wallet = client.wallets.create(
+        name="shopping-agent",
+        chain="base",
+        policy="Max $500/day, block gambling and adult content"
+    )
+    
+    # Fund the wallet
+    # ... (see Creating Wallets guide)
+    ```
+  </Step>
+
+  <Step title="Issue a Virtual Card">
+    Issue a card linked to the wallet:
+    
+    ```python
+    card = client.cards.create(
+        wallet_id=wallet.wallet_id,
+        card_type="virtual",
+        spending_limit=1000.00,
+        currency="USD"
+    )
+    
+    print(f"Card ID: {card.card_id}")
+    print(f"Card Number: {card.number}")
+    print(f"CVV: {card.cvv}")
+    print(f"Expiry: {card.exp_month}/{card.exp_year}")
+    ```
+    
+    <Warning>
+      Card details (number, CVV) are only shown once at creation. Store them securely or retrieve via API.
+    </Warning>
+  </Step>
+
+  <Step title="Use the Card">
+    The agent can now use the card for purchases:
+    
+    ```python
+    # Card details can be used in any payment form
+    payment_details = {
+        "card_number": card.number,
+        "cvv": card.cvv,
+        "exp_month": card.exp_month,
+        "exp_year": card.exp_year,
+        "zip": "94103"
+    }
+    
+    # Example: Use with Stripe
+    import stripe
+    stripe.api_key = "sk_..."
+    
+    charge = stripe.Charge.create(
+        amount=2500,  # $25.00
+        currency="usd",
+        source={
+            "object": "card",
+            "number": card.number,
+            "exp_month": card.exp_month,
+            "exp_year": card.exp_year,
+            "cvc": card.cvv,
+        },
+        description="Agent purchase"
+    )
+    ```
+  </Step>
+
+  <Step title="Monitor Transactions">
+    Track card spending:
+    
+    ```python
+    # Get card transactions
+    transactions = client.cards.get_transactions(
+        card_id=card.card_id,
+        start_date="2026-03-01"
+    )
+    
+    for tx in transactions:
+        print(f"{tx.timestamp}: ${tx.amount} at {tx.merchant}")
+    ```
+  </Step>
+</Steps>
+
+## Card Management
+
+### Retrieve Card Details
+
+```python
+# Get card by ID
+card = client.cards.get(card_id="card_abc123")
+
+print(f"Status: {card.status}")  # active, frozen, cancelled
+print(f"Spent: ${card.spent_total}")
+print(f"Remaining: ${card.spending_limit - card.spent_total}")
+
+# Retrieve sensitive details (requires authorization)
+sensitive = client.cards.get_sensitive(card_id=card.card_id)
+print(f"Card Number: {sensitive.number}")
+print(f"CVV: {sensitive.cvv}")
+```
+
+### Freeze Card
+
+Temporarily block all transactions:
+
+```python
+client.cards.freeze(card_id=card.card_id)
+print("Card frozen - all transactions will be declined")
+
+# Unfreeze when ready
+client.cards.unfreeze(card_id=card.card_id)
+print("Card unfrozen - transactions enabled")
+```
+
+**Use cases:**
+- Suspicious activity detected
+- Agent not in use temporarily
+- Reached spending threshold
+- Testing fraud prevention
+
+### Cancel Card
+
+Permanently deactivate a card:
+
+```python
+client.cards.cancel(card_id=card.card_id, reason="Agent decommissioned")
+print("Card cancelled - cannot be reactivated")
+```
+
+<Warning>
+  Card cancellation is permanent. Issue a new card if needed.
+</Warning>
+
+### Update Spending Limits
+
+```python
+# Increase spending limit
+client.cards.update(
+    card_id=card.card_id,
+    spending_limit=2000.00  # Increase from $1000 to $2000
+)
+
+# Set per-transaction limit
+client.cards.update(
+    card_id=card.card_id,
+    per_transaction_limit=500.00
+)
+```
+
+## Card Spending Limits
+
+Cards enforce multiple layers of limits:
+
+```python
+card = client.cards.create(
+    wallet_id=wallet.wallet_id,
+    card_type="virtual",
+    # Card-specific limits
+    spending_limit=5000.00,          # Total card lifetime limit
+    per_transaction_limit=500.00,    # Max per transaction
+    daily_limit=1000.00,             # Max per day
+    monthly_limit=3000.00,           # Max per month
+    # Inherit wallet policy limits
+    enforce_wallet_policy=True,
+)
+```
+
+**Limit hierarchy:**
+
+1. **Transaction declined if ANY limit exceeded:**
+   - Per-transaction limit
+   - Daily limit
+   - Monthly limit
+   - Total card limit
+   - Wallet policy limits (if enabled)
+
+2. **Most restrictive limit wins**
+
+Example:
+
+```python
+# Wallet policy: Max $200/tx
+# Card limit: Max $500/tx
+# Effective limit: $200/tx (wallet policy is more restrictive)
+```
+
+## Auto-Conversion (USDC → USD)
+
+Sardis automatically converts USDC to USD when cards are used:
+
+```python
+# Card funded from USDC wallet
+card = client.cards.create(
+    wallet_id=wallet.wallet_id,  # Wallet has 1000 USDC
+    card_type="virtual",
+    spending_limit=1000.00,
+    currency="USD"
+)
+
+# When agent spends $100 with the card:
+# 1. Card transaction approved
+# 2. Sardis converts 100 USDC -> $100 USD
+# 3. Merchant receives $100 USD
+# 4. Wallet balance decreases by 100 USDC
+
+balance_after = wallet.get_balance(token="USDC")
+print(f"Remaining: {balance_after} USDC")  # 900 USDC
+```
+
+**Conversion details:**
+- Exchange rate: 1 USDC = $1.00 USD (1:1 peg)
+- Conversion fee: 0.5% (configurable)
+- Settlement time: Instant
+
+### Monitoring Conversions
+
+```python
+# Get conversion history
+conversions = client.cards.get_conversions(
+    card_id=card.card_id,
+    start_date="2026-03-01"
+)
+
+for conv in conversions:
+    print(f"{conv.timestamp}: {conv.amount_crypto} USDC -> ${conv.amount_fiat} USD")
+    print(f"  Rate: {conv.exchange_rate}")
+    print(f"  Fee: ${conv.fee}")
+```
+
+## Authorization Controls (ASA)
+
+Sardis uses Lithic's Authorization Stream Access (ASA) to approve or decline transactions in real-time:
+
+```python
+# Set up authorization webhook
+client.webhooks.create(
+    url="https://yourapp.com/webhooks/card-auth",
+    events=["card.authorization_request"]
+)
+
+# Authorization webhook handler
+@app.route("/webhooks/card-auth", methods=["POST"])
+def handle_card_authorization():
+    event = request.json
+    
+    # Extract transaction details
+    card_id = event["data"]["card_id"]
+    amount = event["data"]["amount"]
+    merchant = event["data"]["merchant_descriptor"]
+    mcc = event["data"]["merchant_category_code"]
+    
+    # Check custom rules
+    if mcc in [7995]:  # Gambling
+        return {"decision": "DECLINE", "reason": "Merchant category blocked"}
+    
+    if amount > 500:
+        # Require approval for large transactions
+        return {"decision": "PENDING", "approval_required": True}
+    
+    # Approve transaction
+    return {"decision": "APPROVE"}
+```
+
+**ASA Response Options:**
+
+| Decision | Description |
+|----------|-------------|
+| `APPROVE` | Allow transaction |
+| `DECLINE` | Block transaction |
+| `PENDING` | Require human approval |
+
+## Card Webhooks
+
+Monitor card activity via webhooks:
+
+```python
+# Subscribe to card events
+client.webhooks.create(
+    url="https://yourapp.com/webhooks/sardis",
+    events=[
+        "card.created",
+        "card.transaction.approved",
+        "card.transaction.declined",
+        "card.frozen",
+        "card.cancelled",
+        "card.limit_exceeded",
+    ]
+)
+
+# Webhook handler
+@app.route("/webhooks/sardis", methods=["POST"])
+def handle_webhook():
+    event = request.json
+    
+    if event["type"] == "card.transaction.approved":
+        # Log successful transaction
+        log_transaction(
+            card_id=event["data"]["card_id"],
+            amount=event["data"]["amount"],
+            merchant=event["data"]["merchant"]
+        )
+        
+    elif event["type"] == "card.transaction.declined":
+        # Alert on declined transaction
+        send_alert(
+            f"Card transaction declined: {event['data']['decline_reason']}"
+        )
+        
+    elif event["type"] == "card.limit_exceeded":
+        # Freeze card when limit exceeded
+        client.cards.freeze(card_id=event["data"]["card_id"])
+        notify_admin("Card limit exceeded - card frozen")
+    
+    return {"status": "ok"}
+```
+
+## Recurring Subscriptions
+
+Virtual cards work with subscription services:
+
+```python
+# Create card for subscriptions
+card = client.cards.create(
+    wallet_id=wallet.wallet_id,
+    card_type="virtual",
+    spending_limit=10000.00,
+    # Allow recurring transactions
+    recurring_enabled=True,
+    # Set monthly limit for subscriptions
+    monthly_limit=500.00
+)
+
+# Track subscriptions
+subscriptions = client.cards.get_subscriptions(card_id=card.card_id)
+for sub in subscriptions:
+    print(f"{sub.merchant}: ${sub.amount}/month")
+    print(f"  Next billing: {sub.next_billing_date}")
+```
+
+**Subscription monitoring:**
+- Sardis detects recurring patterns automatically
+- Webhooks sent before each billing cycle
+- Can cancel subscriptions via API
+
+```python
+# Cancel a subscription
+client.cards.cancel_subscription(
+    card_id=card.card_id,
+    subscription_id="sub_xyz"
+)
+```
+
+## Multi-Card Management
+
+Issue multiple cards per wallet:
+
+```python
+# Issue cards for different purposes
+api_card = client.cards.create(
+    wallet_id=wallet.wallet_id,
+    card_type="virtual",
+    spending_limit=1000.00,
+    nickname="API Services"
+)
+
+cloud_card = client.cards.create(
+    wallet_id=wallet.wallet_id,
+    card_type="virtual",
+    spending_limit=5000.00,
+    nickname="Cloud Computing"
+)
+
+retail_card = client.cards.create(
+    wallet_id=wallet.wallet_id,
+    card_type="virtual",
+    spending_limit=500.00,
+    nickname="Retail Purchases"
+)
+
+# List all cards for wallet
+cards = client.cards.list(wallet_id=wallet.wallet_id)
+for card in cards:
+    print(f"{card.nickname}: {card.status} (${card.spent_total} spent)")
+```
+
+**Benefits:**
+- Separate limits per use case
+- Better tracking and analytics
+- Isolate suspicious activity
+- Easy to cancel one without affecting others
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Card transaction declined unexpectedly">
+    Check decline reason:
+    
+    ```python
+    transactions = client.cards.get_transactions(
+        card_id=card.card_id,
+        status="declined"
+    )
+    
+    for tx in transactions:
+        print(f"Declined: {tx.decline_reason}")
+    ```
+    
+    Common decline reasons:
+    - `insufficient_funds` - Wallet balance too low
+    - `spending_limit_exceeded` - Hit card limit
+    - `merchant_blocked` - MCC or merchant blocked
+    - `card_frozen` - Card is frozen
+    - `policy_violation` - Wallet policy rejection
+  </Accordion>
+
+  <Accordion title="Card not showing in merchant's system">
+    Virtual cards should work instantly. If not:
+    
+    1. Verify card is active:
+       ```python
+       card = client.cards.get(card_id)
+       print(f"Status: {card.status}")
+       ```
+    
+    2. Check card details are correct (number, CVV, expiry)
+    3. Some merchants don't accept virtual cards - check merchant policy
+    4. Try a test transaction for $1 to verify
+  </Accordion>
+
+  <Accordion title="Conversion rate different than expected">
+    USDC-to-USD conversion is 1:1 by design. If you see differences:
+    
+    ```python
+    # Check conversion details
+    conv = client.cards.get_conversions(card_id=card.card_id)[-1]
+    print(f"Rate: {conv.exchange_rate}")
+    print(f"Amount in: {conv.amount_crypto} USDC")
+    print(f"Amount out: ${conv.amount_fiat} USD")
+    print(f"Fee: ${conv.fee}")
+    ```
+    
+    The conversion fee (default 0.5%) is separate from the exchange rate.
+  </Accordion>
+
+  <Accordion title="How to handle card data securely">
+    Card details (number, CVV) are sensitive. Best practices:
+    
+    1. **Never log card details**:
+       ```python
+       # DON'T DO THIS
+       print(f"Card: {card.number}")  # NEVER!
+       
+       # Instead
+       print(f"Card: ****{card.last4}")
+       ```
+    
+    2. **Use PCI-compliant storage** if storing cards
+    3. **Retrieve details only when needed**:
+       ```python
+       sensitive = client.cards.get_sensitive(card_id=card.card_id)
+       # Use immediately
+       # Don't store in variables long-term
+       ```
+    
+    4. **Enable rate limiting** on card detail retrieval
+  </Accordion>
+
+  <Accordion title="Can I issue physical cards?">
+    Currently Sardis supports virtual cards only. Physical cards are on the roadmap.
+    
+    Virtual cards can be added to:
+    - Apple Pay
+    - Google Pay  
+    - Samsung Pay
+    
+    For in-person payments, use mobile wallets:
+    
+    ```python
+    # Generate token for Apple Pay
+    token = client.cards.create_mobile_wallet_token(
+        card_id=card.card_id,
+        wallet_type="apple_pay",
+        device_id="device_abc"
+    )
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Making Payments" icon="credit-card" href="/guides/making-payments">
+    Learn about crypto payments
+  </Card>
+  <Card title="Webhooks" icon="webhook" href="/guides/webhooks">
+    Monitor card transactions
+  </Card>
+  <Card title="Compliance & KYC" icon="shield-check" href="/guides/compliance-kyc">
+    KYC requirements for cards
+  </Card>
+  <Card title="Testing" icon="flask" href="/guides/testing">
+    Test cards in sandbox
+  </Card>
+</CardGroup>

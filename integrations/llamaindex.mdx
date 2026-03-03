@@ -1,0 +1,518 @@
+---
+title: 'LlamaIndex'
+description: 'Build RAG agents with payment capabilities using LlamaIndex'
+icon: 'book-open'
+---
+
+## Overview
+
+Integrate Sardis payment tools into **LlamaIndex** agents to create RAG (Retrieval-Augmented Generation) agents that can make purchases based on retrieved context. Perfect for building procurement agents that research products before buying.
+
+<Note>
+  LlamaIndex integration is community-contributed. The examples below show how to integrate Sardis using LlamaIndex's tool system.
+</Note>
+
+## When to Use LlamaIndex
+
+- **RAG Workflows**: Agents that research before purchasing
+- **Data-Driven Decisions**: Query internal data to inform spending
+- **Knowledge Bases**: Access product catalogs and vendor information
+- **Query Engines**: Use LlamaIndex's powerful query capabilities
+- **Multi-Modal RAG**: Combine text, images, and structured data
+
+## Installation
+
+```bash
+pip install llama-index sardis
+```
+
+<Tip>
+  Requires Python 3.9+ and `llama-index>=0.10.0`
+</Tip>
+
+## Quick Start
+
+<CodeGroup>
+
+```python Basic Setup
+from llama_index.core.tools import FunctionTool
+from llama_index.agent.openai import OpenAIAgent
+from sardis import SardisClient
+from decimal import Decimal
+
+# Initialize Sardis
+sardis = SardisClient(api_key="sk_live_...")
+wallet = sardis.wallets.create(
+    name="research-agent",
+    chain="base",
+    currency="USDC",
+)
+
+# Create Sardis tools
+def sardis_pay(to: str, amount: str, token: str, purpose: str) -> str:
+    """Execute a payment through Sardis.
+    
+    Args:
+        to: Recipient address or merchant
+        amount: Amount in USD (e.g. '25.00')
+        token: USDC, USDT, or EURC
+        purpose: Payment purpose
+    """
+    result = sardis.wallets.transfer(
+        wallet.wallet_id,
+        destination=to,
+        amount=Decimal(amount),
+        token=token,
+        chain="base",
+        domain=to,
+        memo=purpose,
+    )
+    return f"Paid {amount} {token} to {to}. TX: {result.tx_hash}"
+
+def sardis_balance() -> str:
+    """Check wallet balance and limits."""
+    info = sardis.wallets.get_balance(wallet.wallet_id, "base", "USDC")
+    return f"Balance: {info.balance} USDC. Remaining limit: {info.remaining}"
+
+# Wrap as LlamaIndex tools
+pay_tool = FunctionTool.from_defaults(fn=sardis_pay)
+balance_tool = FunctionTool.from_defaults(fn=sardis_balance)
+
+# Create agent
+agent = OpenAIAgent.from_tools(
+    [pay_tool, balance_tool],
+    verbose=True,
+)
+
+# Query
+response = agent.chat("Check my balance and pay $50 to OpenAI for API credits")
+print(response)
+```
+
+```python RAG + Payments
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
+from llama_index.core.tools import FunctionTool, QueryEngineTool
+from llama_index.agent.openai import OpenAIAgent
+from sardis import SardisClient
+from decimal import Decimal
+
+# Load vendor catalog
+documents = SimpleDirectoryReader("./vendor_catalog").load_data()
+index = VectorStoreIndex.from_documents(documents)
+
+# Create query engine
+query_engine = index.as_query_engine()
+
+# Wrap as tool
+vendor_tool = QueryEngineTool.from_defaults(
+    query_engine=query_engine,
+    name="vendor_search",
+    description="Search vendor catalog for products and pricing",
+)
+
+# Initialize Sardis
+sardis = SardisClient(api_key="sk_live_...")
+wallet = sardis.wallets.create(name="procurement", chain="base")
+
+# Create payment tool
+def sardis_pay(to: str, amount: str, token: str, purpose: str) -> str:
+    """Execute payment after researching vendor."""
+    result = sardis.wallets.transfer(
+        wallet.wallet_id,
+        destination=to,
+        amount=Decimal(amount),
+        token=token,
+        chain="base",
+        domain=to,
+        memo=purpose,
+    )
+    return f"Paid {amount} {token} to {to}. TX: {result.tx_hash}"
+
+pay_tool = FunctionTool.from_defaults(fn=sardis_pay)
+
+# Create agent with both RAG and payment tools
+agent = OpenAIAgent.from_tools(
+    [vendor_tool, pay_tool],
+    verbose=True,
+    system_prompt=(
+        "You are a procurement agent. When asked to purchase something:\n"
+        "1. Search the vendor catalog for options\n"
+        "2. Compare pricing and features\n"
+        "3. Make the purchase using sardis_pay\n"
+        "Always research before buying."
+    ),
+)
+
+# Query that triggers RAG + payment
+response = agent.chat(
+    "Find the cheapest OpenAI API credit package and purchase it"
+)
+print(response)
+```
+
+</CodeGroup>
+
+## Creating Sardis Tools
+
+Convert Sardis functions to LlamaIndex tools:
+
+```python
+from llama_index.core.tools import FunctionTool
+from sardis import SardisClient
+from decimal import Decimal
+
+sardis = SardisClient(api_key="sk_live_...")
+wallet = sardis.wallets.create(name="agent", chain="base")
+
+# Payment tool
+def sardis_pay(
+    to: str,
+    amount: str,
+    token: str = "USDC",
+    purpose: str = ""
+) -> str:
+    """Execute a payment through Sardis with policy enforcement.
+    
+    Args:
+        to: Recipient address or merchant identifier
+        amount: Amount in USD (e.g. '25.00')
+        token: Stablecoin to use (USDC, USDT, EURC)
+        purpose: Payment purpose for audit trail
+    
+    Returns:
+        Payment confirmation with transaction hash
+    """
+    result = sardis.wallets.transfer(
+        wallet.wallet_id,
+        destination=to,
+        amount=Decimal(amount),
+        token=token,
+        chain="base",
+        domain=to,
+        memo=purpose,
+    )
+    return (
+        f"Payment successful:\n"
+        f"  Amount: {result.amount} {token}\n"
+        f"  To: {to}\n"
+        f"  TX Hash: {result.tx_hash}\n"
+        f"  Chain: {result.chain}\n"
+        f"  Status: {result.status}"
+    )
+
+# Balance tool
+def sardis_balance() -> str:
+    """Check wallet balance and spending limits.
+    
+    Returns:
+        Balance information including available funds and limits
+    """
+    info = sardis.wallets.get_balance(wallet.wallet_id, "base", "USDC")
+    return (
+        f"Wallet Balance:\n"
+        f"  Available: {info.balance} USDC\n"
+        f"  Chain: {info.chain}\n"
+        f"  Wallet ID: {info.wallet_id}"
+    )
+
+# Policy check tool
+def sardis_check_policy(
+    amount: str,
+    vendor: str = ""
+) -> str:
+    """Check if a payment would be allowed by policy.
+    
+    Args:
+        amount: Amount to check (e.g. '50.00')
+        vendor: Optional vendor name to check
+    
+    Returns:
+        Policy check result
+    """
+    # Implementation depends on your policy system
+    return f"Payment of ${amount} to {vendor or 'any vendor'}: Allowed"
+
+# Wrap as LlamaIndex tools
+pay_tool = FunctionTool.from_defaults(fn=sardis_pay)
+balance_tool = FunctionTool.from_defaults(fn=sardis_balance)
+policy_tool = FunctionTool.from_defaults(fn=sardis_check_policy)
+```
+
+## RAG + Payment Workflow
+
+Combine retrieval with payment execution:
+
+```python
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
+from llama_index.core.tools import QueryEngineTool, FunctionTool
+from llama_index.agent.openai import OpenAIAgent
+
+# 1. Load product catalog
+products = SimpleDirectoryReader("./products").load_data()
+product_index = VectorStoreIndex.from_documents(products)
+
+# 2. Load vendor information
+vendors = SimpleDirectoryReader("./vendors").load_data()
+vendor_index = VectorStoreIndex.from_documents(vendors)
+
+# 3. Create query engines
+product_engine = product_index.as_query_engine()
+vendor_engine = vendor_index.as_query_engine()
+
+# 4. Wrap as tools
+product_tool = QueryEngineTool.from_defaults(
+    query_engine=product_engine,
+    name="product_search",
+    description="Search product catalog for features and pricing",
+)
+
+vendor_tool = QueryEngineTool.from_defaults(
+    query_engine=vendor_engine,
+    name="vendor_search",
+    description="Search vendor database for contact info and reviews",
+)
+
+# 5. Add payment tool
+pay_tool = FunctionTool.from_defaults(fn=sardis_pay)
+
+# 6. Create agent
+agent = OpenAIAgent.from_tools(
+    [product_tool, vendor_tool, pay_tool],
+    verbose=True,
+    system_prompt=(
+        "You are a procurement agent. Your workflow:\n"
+        "1. Search products to find what the user needs\n"
+        "2. Search vendors to verify reputation\n"
+        "3. Compare options and recommend best choice\n"
+        "4. Execute payment using sardis_pay\n"
+        "Always research thoroughly before purchasing."
+    ),
+)
+
+# 7. Execute workflow
+response = agent.chat(
+    "I need a cloud hosting solution for under $100/month. "
+    "Research options and purchase the best one."
+)
+print(response)
+```
+
+## Query Engine Patterns
+
+### Vendor Research Agent
+
+```python
+from llama_index.core import VectorStoreIndex
+from llama_index.core.tools import QueryEngineTool
+
+# Load vendor reviews and pricing
+documents = SimpleDirectoryReader("./vendor_data").load_data()
+index = VectorStoreIndex.from_documents(documents)
+
+vendor_query = index.as_query_engine(
+    similarity_top_k=5,
+    response_mode="tree_summarize",
+)
+
+vendor_tool = QueryEngineTool.from_defaults(
+    query_engine=vendor_query,
+    name="vendor_research",
+    description=(
+        "Research vendors including pricing, reviews, and support quality. "
+        "Use before making any purchase."
+    ),
+)
+```
+
+### Spending Analytics
+
+```python
+# Index past transactions
+transactions = SimpleDirectoryReader("./transactions").load_data()
+tx_index = VectorStoreIndex.from_documents(transactions)
+
+analytics_query = tx_index.as_query_engine()
+
+analytics_tool = QueryEngineTool.from_defaults(
+    query_engine=analytics_query,
+    name="spending_analytics",
+    description="Analyze past spending patterns and vendor history",
+)
+
+# Agent can now research spending before new purchases
+agent = OpenAIAgent.from_tools(
+    [analytics_tool, vendor_tool, pay_tool],
+    system_prompt="Check spending history before making new purchases.",
+)
+```
+
+## ReAct Agent with Sardis
+
+```python
+from llama_index.agent.openai import OpenAIAgent
+from llama_index.core.tools import FunctionTool
+
+# Create tools
+tools = [
+    FunctionTool.from_defaults(fn=sardis_pay),
+    FunctionTool.from_defaults(fn=sardis_balance),
+    FunctionTool.from_defaults(fn=sardis_check_policy),
+]
+
+# Create ReAct agent
+agent = OpenAIAgent.from_tools(
+    tools,
+    verbose=True,
+    max_iterations=10,
+)
+
+# Agent will reason through steps
+response = agent.chat(
+    "I need to purchase $50 of Anthropic API credits. "
+    "Check my balance first, verify the policy allows it, "
+    "then make the payment."
+)
+print(response)
+```
+
+## Structured Output + Payments
+
+```python
+from llama_index.core.program import LLMTextCompletionProgram
+from pydantic import BaseModel, Field
+
+class PurchaseDecision(BaseModel):
+    should_purchase: bool = Field(description="Whether to make the purchase")
+    vendor: str = Field(description="Vendor to purchase from")
+    amount: str = Field(description="Amount to pay")
+    reasoning: str = Field(description="Why this decision was made")
+
+# Create program
+program = LLMTextCompletionProgram.from_defaults(
+    output_cls=PurchaseDecision,
+    prompt_template_str=(
+        "Based on the vendor research:\n{research}\n\n"
+        "Should we purchase? If yes, from whom and how much?"
+    ),
+)
+
+# Get structured decision
+research = "OpenAI: $50, excellent support. AWS: $60, good uptime."
+decision = program(research=research)
+
+# Execute if approved
+if decision.should_purchase:
+    result = sardis.wallets.transfer(
+        wallet.wallet_id,
+        destination=decision.vendor,
+        amount=Decimal(decision.amount),
+        token="USDC",
+        chain="base",
+        domain=decision.vendor,
+        memo=decision.reasoning,
+    )
+    print(f"Purchase executed: {result.tx_hash}")
+```
+
+## Best Practices
+
+### 1. Research Before Buying
+
+```python
+system_prompt = (
+    "Always use vendor_search before sardis_pay. "
+    "Never purchase without researching first."
+)
+```
+
+### 2. Use Query Engines for Context
+
+```python
+# Good: Agent has context
+tools = [vendor_tool, product_tool, pay_tool]
+
+# Bad: Agent makes blind purchases
+tools = [pay_tool]
+```
+
+### 3. Structure Tool Descriptions
+
+```python
+def sardis_pay(...) -> str:
+    """Execute payment through Sardis.
+    
+    Args:
+        to: Recipient (required)
+        amount: USD amount (required)
+        token: USDC/USDT/EURC (default: USDC)
+        purpose: Payment reason (optional)
+    
+    Returns:
+        Payment confirmation with TX hash
+    
+    Example:
+        sardis_pay(to="openai.com", amount="25.00", purpose="API credits")
+    """
+```
+
+### 4. Handle Errors Gracefully
+
+```python
+def sardis_pay(to: str, amount: str, token: str, purpose: str) -> str:
+    try:
+        result = sardis.wallets.transfer(...)
+        return f"Success: {result.tx_hash}"
+    except Exception as e:
+        return f"Payment failed: {str(e)}"
+```
+
+## Example: Research-to-Purchase Pipeline
+
+```python
+from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
+from llama_index.core.tools import QueryEngineTool, FunctionTool
+from llama_index.agent.openai import OpenAIAgent
+
+# Load vendor database
+vendors = SimpleDirectoryReader("./vendors").load_data()
+vendor_index = VectorStoreIndex.from_documents(vendors)
+vendor_query = vendor_index.as_query_engine()
+
+vendor_tool = QueryEngineTool.from_defaults(
+    query_engine=vendor_query,
+    name="vendor_research",
+    description="Research vendors before purchasing",
+)
+
+pay_tool = FunctionTool.from_defaults(fn=sardis_pay)
+
+agent = OpenAIAgent.from_tools(
+    [vendor_tool, pay_tool],
+    system_prompt=(
+        "Workflow:\n"
+        "1. Research vendor using vendor_research\n"
+        "2. If vendor is reputable, use sardis_pay\n"
+        "3. If vendor has bad reviews, decline and explain"
+    ),
+)
+
+response = agent.chat("Purchase $50 of API credits from best-api-vendor.com")
+print(response)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="LangChain" icon="link" href="/integrations/langchain">
+    Alternative Python agent framework
+  </Card>
+  <Card title="OpenAI" icon="robot" href="/integrations/openai">
+    Use OpenAI function calling directly
+  </Card>
+  <Card title="Policy Engine" icon="shield" href="/core-concepts/policy-engine">
+    Understand spending policy rules
+  </Card>
+  <Card title="API Reference" icon="book" href="/api-reference/python-sdk">
+    Full Python SDK documentation
+  </Card>
+</CardGroup>
