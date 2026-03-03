@@ -1,0 +1,202 @@
+{
+  "projectType": "saas",
+  "projectName": "Sardis",
+  "projectDescription": "Payment OS for the Agent Economy — non-custodial MPC wallets with natural language spending policies for AI agents",
+  "theme": "aspen",
+  "primaryColor": "#6366F1",
+  "lightColor": "#818CF8",
+  "darkColor": "#4F46E5",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/wallets",
+              "concepts/policies",
+              "concepts/agents",
+              "concepts/payments",
+              "concepts/compliance"
+            ]
+          },
+          {
+            "group": "Framework Integrations",
+            "pages": [
+              "integrations/mcp",
+              "integrations/langchain",
+              "integrations/openai",
+              "integrations/vercel-ai",
+              "integrations/crewai",
+              "integrations/anthropic",
+              "integrations/gemini",
+              "integrations/llamaindex",
+              "integrations/mastra"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/creating-wallets",
+              "guides/spending-policies",
+              "guides/making-payments",
+              "guides/virtual-cards",
+              "guides/agent-to-agent",
+              "guides/compliance-kyc",
+              "guides/webhooks",
+              "guides/testing"
+            ]
+          },
+          {
+            "group": "Blockchain",
+            "pages": [
+              "blockchain/supported-chains",
+              "blockchain/supported-tokens",
+              "blockchain/smart-contracts",
+              "blockchain/gas-optimization"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "security/mpc-architecture",
+              "security/policy-enforcement",
+              "security/threat-model",
+              "security/best-practices"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/overview",
+              "api/authentication",
+              "api/errors",
+              "api/rate-limits"
+            ]
+          },
+          {
+            "group": "Core Endpoints",
+            "pages": [
+              "api/agents",
+              "api/wallets",
+              "api/payments",
+              "api/policies",
+              "api/groups"
+            ]
+          },
+          {
+            "group": "Advanced Features",
+            "pages": [
+              "api/cards",
+              "api/holds",
+              "api/approvals",
+              "api/compliance",
+              "api/webhooks"
+            ]
+          },
+          {
+            "group": "Analytics",
+            "pages": [
+              "api/spending-analytics",
+              "api/transactions",
+              "api/ledger"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "SDKs",
+        "groups": [
+          {
+            "group": "Official SDKs",
+            "pages": [
+              "sdks/python",
+              "sdks/typescript",
+              "sdks/mcp-server"
+            ]
+          },
+          {
+            "group": "SDK Reference",
+            "pages": [
+              "sdks/python-reference",
+              "sdks/typescript-reference",
+              "sdks/error-handling",
+              "sdks/async-patterns"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Resources",
+        "groups": [
+          {
+            "group": "Additional Resources",
+            "pages": [
+              "resources/examples",
+              "resources/changelog",
+              "resources/faq",
+              "resources/support",
+              "resources/contributing"
+            ]
+          },
+          {
+            "group": "Protocols",
+            "pages": [
+              "resources/protocols/ap2",
+              "resources/protocols/tap",
+              "resources/protocols/ucp",
+              "resources/protocols/a2a"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Non-custodial MPC wallets with Turnkey/Fireblocks integration",
+    "Natural language spending policies with real-time enforcement",
+    "Financial hallucination prevention policy firewall",
+    "Support for 9 AI frameworks (MCP, LangChain, OpenAI, Vercel AI, CrewAI, etc.)",
+    "Virtual Visa/Mastercard issuance via Lithic",
+    "Agent-to-agent escrow with cryptographic mandate chains",
+    "Multi-chain support (Base, Polygon, Ethereum, Arbitrum, Optimism)",
+    "KYC/AML compliance with Persona and Elliptic",
+    "Double-entry audit ledger with cryptographic proofs",
+    "Protocol compliance (AP2, TAP, UCP, A2A, x402)"
+  ],
+  "publicApiSurface": [
+    "SardisClient.agents.create() - Create AI agent with wallet",
+    "SardisClient.wallets.create() - Create MPC wallet with policies",
+    "SardisClient.payments.create() - Execute policy-validated payment",
+    "SardisClient.policies.create() - Define natural language spending rules",
+    "SardisClient.cards.issue() - Issue virtual Visa/Mastercard",
+    "SardisClient.holds.create() - Create payment hold for escrow",
+    "SardisClient.approvals.request() - Request human approval for transaction",
+    "SardisClient.compliance.verify() - Run KYC/AML checks",
+    "SardisClient.groups.create() - Create agent group with shared budget",
+    "SardisClient.transactions.list() - Query transaction history",
+    "SardisClient.spending.summary() - Get spending analytics",
+    "@sardis/mcp-server - MCP server for Claude/Cursor integration",
+    "sardis_pay() - MCP tool for executing payments",
+    "sardis_check_policy() - MCP tool for policy validation",
+    "POST /api/v2/agents - REST API agent creation",
+    "POST /api/v2/wallets - REST API wallet creation",
+    "POST /api/v2/payments - REST API payment execution",
+    "POST /api/v2/policies - REST API policy management",
+    "GET /api/v2/spending - REST API spending analytics"
+  ]
+}
